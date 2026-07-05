@@ -1,0 +1,29 @@
+{:paths ["src" "resources"]
+
+ :deps {org.clojure/clojure {:mvn/version "1.12.5"}
+        org.clojure/data.json {:mvn/version "2.5.2"}}
+
+ :aliases
+ {;; Development REPL: adds dev/ and test/ plus optional integrations.
+  :dev {:extra-paths ["dev" "test"]
+        :extra-deps {integrant/integrant {:mvn/version "0.13.1"}}}
+
+  ;; Run the test suite: clojure -M:test
+  :test {:extra-paths ["test"]
+         :extra-deps {org.clojure/tools.namespace {:mvn/version "1.5.1"}}
+         :main-opts ["-m" "kirahowe.clj-llm.test-runner"]}
+
+  ;; Run tests with integrant on the classpath to exercise the optional bindings.
+  :test-integrant {:extra-paths ["test"]
+                   :extra-deps {org.clojure/tools.namespace {:mvn/version "1.5.1"}
+                                integrant/integrant {:mvn/version "0.13.1"}}
+                   :main-opts ["-m" "kirahowe.clj-llm.test-runner"]}
+
+  ;; Formatting: clojure -M:cljfmt check|fix
+  :cljfmt {:extra-deps {dev.weavejester/cljfmt {:mvn/version "0.13.0"}}
+           :main-opts ["-m" "cljfmt.main"]}
+
+  ;; Build tasks: clojure -T:build jar|install|deploy|clean
+  :build {:deps {io.github.clojure/tools.build {:mvn/version "0.10.9"}
+                 slipset/deps-deploy {:mvn/version "0.2.2"}}
+          :ns-default build}}}

@@ -1,0 +1,36 @@
+{:min-bb-version "1.3.0"
+ :tasks
+ {:requires ([babashka.fs :as fs])
+
+  repl {:doc "Start a development REPL (dev + test paths, integrant available)"
+        :task (clojure "-M:dev")}
+
+  test {:doc "Run the test suite"
+        :task (clojure "-M:test")}
+
+  test:integrant {:doc "Run the test suite with integrant on the classpath"
+                  :task (clojure "-M:test-integrant")}
+
+  lint {:doc "Lint src and test with clj-kondo (requires clj-kondo on PATH)"
+        :task (shell "clj-kondo --lint src test")}
+
+  fmt {:doc "Check formatting with cljfmt"
+       :task (clojure "-M:cljfmt check src test dev")}
+
+  fmt:fix {:doc "Fix formatting with cljfmt"
+           :task (clojure "-M:cljfmt fix src test dev")}
+
+  ci {:doc "Run everything CI runs: format check, lint, tests"
+      :depends [fmt lint test:integrant]}
+
+  clean {:doc "Remove build artifacts"
+         :task (fs/delete-tree "target")}
+
+  jar {:doc "Build the library jar"
+       :task (clojure "-T:build jar")}
+
+  install {:doc "Build and install the jar into the local Maven repository"
+           :task (clojure "-T:build install")}
+
+  deploy {:doc "Deploy to Clojars (requires CLOJARS_USERNAME/CLOJARS_PASSWORD)"
+          :task (clojure "-T:build deploy")}}}

@@ -1,0 +1,14 @@
+target/
+classes/
+checkouts/
+.cpcache/
+.clj-kondo/.cache/
+.lsp/
+.nrepl-port
+.portal/
+*.jar
+*.class
+pom.xml.asc
+/llm.edn
+.hgignore
+.hg/
