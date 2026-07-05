@@ -3,7 +3,7 @@
   (:require [clojure.tools.build.api :as b]
             [deps-deploy.deps-deploy :as dd]))
 
-(def lib 'io.github.kirahowe/clj-llm)
+(def lib 'com.kirahowe/clj-llm)
 (def version "0.1.0-SNAPSHOT")
 (def class-dir "target/classes")
 (def basis (delay (b/create-basis {:project "deps.edn"})))

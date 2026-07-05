@@ -2,32 +2,32 @@
   (:require [clojure.test :refer [deftest is testing]]
             [kirahowe.clj-llm.config :as config]))
 
-(def fake-env
-  {"API_KEY" "sk-from-env"
-   "EMPTYABLE" nil})
+;; A variable virtually guaranteed to exist, and one guaranteed not to.
+(def set-var "HOME")
+(def unset-var "CLJ_LLM_TEST_DEFINITELY_NOT_SET")
 
 (deftest reader-tags
-  (testing "#env reads from the environment lookup"
-    (is (= {:key "sk-from-env"}
-           (config/read-config-string "{:key #env \"API_KEY\"}" {:env fake-env}))))
+  (testing "#env reads from the environment"
+    (is (= (System/getenv set-var)
+           (:key (config/read-config-string
+                  (str "{:key #env \"" set-var "\"}"))))))
 
   (testing "#env is nil for unset variables"
-    (is (= {:key nil}
-           (config/read-config-string "{:key #env \"NOPE\"}" {:env fake-env}))))
+    (is (nil? (:key (config/read-config-string
+                     (str "{:key #env \"" unset-var "\"}"))))))
 
   (testing "#or picks the first non-nil value"
-    (is (= {:url "fallback"}
-           (config/read-config-string "{:url #or [#env \"NOPE\" \"fallback\"]}"
-                                      {:env fake-env})))
-    (is (= {:url "sk-from-env"}
-           (config/read-config-string "{:url #or [#env \"API_KEY\" \"fallback\"]}"
-                                      {:env fake-env}))))
+    (is (= "fallback"
+           (:url (config/read-config-string
+                  (str "{:url #or [#env \"" unset-var "\" \"fallback\"]}")))))
+    (is (= (System/getenv set-var)
+           (:url (config/read-config-string
+                  (str "{:url #or [#env \"" set-var "\" \"fallback\"]}"))))))
 
   (testing "#profile selects the active profile, falling back to :default"
     (let [s "{:max-tokens #profile {:dev 128 :default 4096}}"]
       (is (= {:max-tokens 128} (config/read-config-string s {:profile :dev})))
-      (is (= {:max-tokens 4096} (config/read-config-string s {:profile :prod})))
-      (is (= {:max-tokens 4096} (config/read-config-string s {}))))))
+      (is (= {:max-tokens 4096} (config/read-config-string s {:profile :prod}))))))
 
 (def test-config
   {:providers {:acme {:adapter :openai

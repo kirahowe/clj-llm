@@ -7,12 +7,12 @@
 
   Provider config keys:
     :adapter    :openai
-    :api-key    usually required — e.g. #env \"OPENAI_API_KEY\";
+    :api-key    usually required — e.g. #env OPENAI_API_KEY;
                 may be omitted for local servers that don't check auth
     :base-url   optional, defaults to https://api.openai.com/v1
     :headers    optional map of extra headers
     :timeout-ms optional request timeout"
-  (:require [clojure.data.json :as json]
+  (:require [charred.api :as json]
             [kirahowe.clj-llm.http :as http]
             [kirahowe.clj-llm.provider :as provider]))
 
@@ -37,7 +37,7 @@
                                 {:id id
                                  :type "function"
                                  :function {:name name
-                                            :arguments (json/write-str arguments)}})
+                                            :arguments (json/write-json-str arguments)}})
                               tool-calls)))
     {:role (name role) :content content}))
 
@@ -71,7 +71,7 @@
   (cond
     (map? arguments) arguments
     (or (nil? arguments) (= "" arguments)) {}
-    :else (json/read-str arguments :key-fn keyword)))
+    :else (json/read-json arguments :key-fn keyword)))
 
 (defn parse-response
   "Normalize a (parsed) chat-completions response body."
@@ -166,7 +166,7 @@
              (let [data (http/sse-data line)]
                (if (or (nil? data) (= "[DONE]" data))
                  state
-                 (reduce-chunk state (json/read-str data :key-fn keyword) on-chunk))))
+                 (reduce-chunk state (json/read-json data :key-fn keyword) on-chunk))))
            initial-stream-state)
           finalize-stream)
       (-> (http/post-json http-req) :body parse-response))))

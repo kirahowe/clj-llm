@@ -1,7 +1,9 @@
 {:paths ["src" "resources"]
 
  :deps {org.clojure/clojure {:mvn/version "1.12.5"}
-        org.clojure/data.json {:mvn/version "2.5.2"}}
+        aero/aero {:mvn/version "1.1.6"}
+        clj-http/clj-http {:mvn/version "3.13.0"}
+        com.cnuernber/charred {:mvn/version "1.034"}}
 
  :aliases
  {;; Development REPL: adds dev/ and test/ plus optional integrations.

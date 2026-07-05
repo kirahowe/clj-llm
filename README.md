@@ -1,7 +1,8 @@
 # clj-llm
 
 A small, functional Clojure library for calling large language models —
-any model, from any provider, including local ones.
+any model, from any provider, including local ones — with evals built in
+from the ground up.
 
 Inspired by [RubyLLM](https://rubyllm.com), rebuilt on Clojure values:
 
@@ -10,15 +11,24 @@ Inspired by [RubyLLM](https://rubyllm.com), rebuilt on Clojure values:
 - **Context agnostic.** Because nothing is stateful, the same calls work
   in a web app, a CLI, a background job, or a one-off REPL experiment.
 - **Config lives in config files.** API keys, base URLs, model choices —
-  all of it comes from EDN config (with `#env` for secrets), never from
+  all of it comes from EDN config read with
+  [aero](https://github.com/juxt/aero) (`#env` for secrets), never from
   source code.
+- **Evals are first class.** You can't pick "the best" model or prompt
+  without measuring. Every response is a complete, replayable
+  interaction record, and `kirahowe.clj-llm.eval` runs cases × variants
+  into scored, comparable summaries.
 - **Conversations are data.** A conversation is a vector of message
-  maps. "Multi-turn" just means passing the previous `:messages` back
-  in — no chat-object ceremony, and a zero-shot question is not
-  pretending to be a chat.
+  maps. Multi-turn just means passing the previous `:messages` back in —
+  no chat-object ceremony, and a zero-shot question isn't pretending to
+  be a chat.
 - **One protocol away from any provider.** Adapters are multimethods;
   the OpenAI-compatible adapter alone covers most of the hosted and
   self-hosted ecosystem, and adding a new adapter is a page of code.
+
+Built on [clj-http](https://github.com/dakrone/clj-http),
+[charred](https://github.com/cnuernber/charred) and
+[aero](https://github.com/juxt/aero).
 
 ## Installation
 
@@ -26,31 +36,31 @@ Not yet on Clojars. Use it as a git dependency:
 
 ```clojure
 ;; deps.edn
-{:deps {io.github.kirahowe/clj-llm {:git/url "https://github.com/kirahowe/clj-llm"
-                                    :git/sha "..."}}}
+{:deps {com.kirahowe/clj-llm {:git/url "https://github.com/kirahowe/clj-llm"
+                              :git/sha "..."}}}
 ```
 
 ## Configuration
 
-Create an EDN config file (conventionally `llm.edn`, kept out of version
-control if you like, though with `#env` there are no secrets in it). A
-full example ships at
+Create an EDN config file (conventionally `llm.edn`). It's read with
+aero, so the full aero tag set is available — `#env`, `#or`, `#profile`,
+`#include`, `#ref`, ... A full example ships at
 [`resources/clj-llm/config.example.edn`](resources/clj-llm/config.example.edn):
 
 ```clojure
 {:providers
  {:anthropic {:adapter :anthropic
-              :api-key #env "ANTHROPIC_API_KEY"}
+              :api-key #env ANTHROPIC_API_KEY}
 
   ;; the :openai adapter speaks the OpenAI chat-completions protocol,
   ;; so it covers OpenAI, OpenRouter, Groq, Together, vLLM, LM Studio...
   :groq {:adapter :openai
          :base-url "https://api.groq.com/openai/v1"
-         :api-key #env "GROQ_API_KEY"}
+         :api-key #env GROQ_API_KEY}
 
   ;; local models through Ollama's native API
   :local {:adapter :ollama
-          :base-url #or [#env "OLLAMA_HOST" "http://localhost:11434"]}}
+          :base-url #or [#env OLLAMA_HOST "http://localhost:11434"]}}
 
  ;; aliases: code names an intent (:smart, :fast); config decides what
  ;; that means. Swap providers without touching code.
@@ -63,26 +73,17 @@ full example ships at
   :max-tokens #profile {:dev 1024 :default 4096}}}
 ```
 
-Three reader tags keep the file declarative:
-
-| Tag        | Meaning                                             |
-|------------|-----------------------------------------------------|
-| `#env`     | value of an environment variable (`nil` if unset)   |
-| `#or`      | first non-nil value in a vector                     |
-| `#profile` | pick a branch by profile, e.g. `{:dev … :default …}`|
-
 Load it with:
 
 ```clojure
 (require '[kirahowe.clj-llm :as llm])
 
 (def config (llm/read-config "llm.edn"))                  ; or any io/reader-able source
-(def config (llm/read-config "llm.edn" {:profile :dev}))  ; select #profile branches
+(def config (llm/read-config "llm.edn" {:profile :dev}))  ; aero options pass through
 ```
 
-The config is a plain map — if you'd rather build it with
-[aero](https://github.com/juxt/aero), your own loader, or literal EDN in
-a test, everything downstream accepts it just the same.
+The result is a plain map — configs built by hand, by aero directly, or
+inside an integrant system all work identically downstream.
 
 ## Usage
 
@@ -98,6 +99,7 @@ a test, everything downstream accepts it just the same.
 ;;     :provider :anthropic
 ;;     :usage {:input-tokens 13 :output-tokens 42}
 ;;     :finish-reason :stop
+;;     :request {...} :latency-ms 640 :started-at #inst "..." :op :generate
 ;;     :raw {...}}
 
 ;; pick a model per call — by alias, "provider/model" string, or map
@@ -174,6 +176,84 @@ useful when tool execution needs approval, queueing, or your own loop.
 Uses the `:embedding-model` alias from `:defaults`; override per call
 with `{:model ...}`.
 
+## Evals
+
+There is no iterating toward better models/prompts/parameters without
+measuring, so evals are part of the core design, in two layers.
+
+### 1. Every call collects what evals need
+
+Every `generate`/`embed` response doubles as an **interaction record**:
+alongside the result it carries the fully resolved `:request`
+(replayable — tool functions scrubbed), `:usage`, `:latency-ms`,
+`:started-at` and `:op`. To collect records from live traffic, set a
+hook once in config:
+
+```clojure
+{:defaults {:model :smart
+            :on-interaction my.app/store-interaction!}}  ; fn of one record
+```
+
+Collected records replay directly as eval cases, since a case accepts
+the same `:messages` a record carries.
+
+### 2. Suites: cases × variants → scored comparison
+
+A suite is plain data — inline or an EDN file (read with the same aero
+reader as config). Cases say *what to test*, variants say *what to
+compare* (any bundle of request keys: model, system prompt,
+temperature, tools...), scorers say *what good looks like*:
+
+```clojure
+;; evals/suite.edn
+{:cases    [{:id :capital
+             :input "What is the capital of France?"
+             :expected "Paris"}]
+ :variants [{:id :baseline :model :smart}
+            {:id :cheap    :model :fast}
+            {:id :terse    :model :smart :system "Answer in one word."}]
+ :scorers  [:includes]}
+```
+
+```clojure
+(require '[kirahowe.clj-llm.eval :as eval])
+
+(def report (eval/run config "evals/suite.edn"))
+
+(eval/print-summary report)
+;; variant    cases  errors  includes  latency(mean ms)  in-tok  out-tok
+;; ---------  -----  ------  --------  ----------------  ------  -------
+;; :baseline  3      0       1.000     642               118     57
+;; :cheap     3      0       0.667     97                118     41
+;; :terse     3      0       1.000     512               130     12
+```
+
+The report is data (`:results` per case×variant with full responses,
+`:summary` per variant) — print it, diff it against last week's, or
+store it next to the config that produced it. From the shell:
+`bb eval evals/suite.edn`.
+
+**Scorers**: built-ins `:exact-match`, `:includes`, `:matches` cover
+mechanical ground truth; any function of
+`{:config :case :variant :response}` returning `{:score 0.0-1.0}` works;
+and for subjective quality, model-graded scoring is one call away:
+
+```clojure
+(eval/run config
+          {:cases cases
+           :variants variants
+           :scorers [:includes
+                     (eval/llm-judge {:model :smart
+                                      :criteria "Factually accurate, and answers the question directly."})]})
+```
+
+The intended workflow: start with the defaults (copy
+[`resources/clj-llm/eval-suite.example.edn`](resources/clj-llm/eval-suite.example.edn)),
+grow cases from real traffic via `:on-interaction`, and let every
+model/prompt change be a benchmarked decision instead of a vibe.
+
+## Extending
+
 ### Adding a provider adapter
 
 An adapter is a couple of multimethod implementations, dispatching on
@@ -191,15 +271,14 @@ the `:adapter` key of a provider config:
 
 See the `kirahowe.clj-llm.provider` docstring for the full contract, and
 `kirahowe.clj-llm.providers.ollama` for a compact reference
-implementation. Adapters also get optional `start`/`stop` lifecycle
-hooks — useful if a future provider needs, say, OAuth token acquisition.
+implementation.
 
 ### Integrant
 
-The library is stateless, so it doesn't *need* a lifecycle — but if your
-app is an Integrant system, add `integrant/integrant` to your deps and
-require `kirahowe.clj-llm.integrant` for a ready-made key that loads the
-config file and runs each provider's `start`/`stop` hooks:
+The library is stateless, so it doesn't *need* lifecycle management —
+but if your app is an integrant system, add `integrant/integrant` to
+your deps and require `kirahowe.clj-llm.integrant` for a ready-made key
+that loads the config file (aero options like `:profile` pass through):
 
 ```clojure
 ;; system.edn
@@ -214,8 +293,11 @@ config file and runs each provider's `start`/`stop` hooks:
     (llm/generate llm (:question (:params request)))))
 ```
 
-Integrant is deliberately **not** a dependency of clj-llm — plain-map
-users never load it.
+Init/halt also run each provider's `start`/`stop` multimethod hooks
+(no-ops for the built-in adapters) — the escape hatch if a future
+adapter ever needs real state like OAuth token refresh. Integrant is
+deliberately **not** a dependency of clj-llm; plain-map users never
+load it.
 
 ## Response reference
 
@@ -230,6 +312,10 @@ users never load it.
 | `:provider`      | provider name keyword from your config                       |
 | `:usage`         | `{:input-tokens n :output-tokens n}`, summed over tool rounds|
 | `:finish-reason` | `:stop`, `:length`, `:tool-calls`, `:refusal`, ...           |
+| `:request`       | the fully resolved, replayable request                       |
+| `:latency-ms`    | wall-clock duration of the call                              |
+| `:started-at`    | `java.time.Instant` the call began                           |
+| `:op`            | `:generate` (or `:embed`)                                    |
 | `:raw`           | the provider's parsed wire response (last round)             |
 
 HTTP failures throw `ex-info` with `{:type :kirahowe.clj-llm.http/error
@@ -245,6 +331,7 @@ All dev affordances are [Babashka](https://babashka.org) tasks — run
 | `bb repl`           | dev REPL with `dev/`, `test/` and integrant loaded  |
 | `bb test`           | run the test suite                                  |
 | `bb test:integrant` | test suite incl. the optional integrant bindings    |
+| `bb eval`           | run an eval suite (`bb eval [suite.edn [llm.edn]]`) |
 | `bb lint`           | clj-kondo over `src` and `test`                     |
 | `bb fmt` / `bb fmt:fix` | check / fix formatting with cljfmt             |
 | `bb ci`             | format check + lint + full tests                    |
@@ -254,24 +341,24 @@ All dev affordances are [Babashka](https://babashka.org) tasks — run
 | `bb deploy`         | deploy to Clojars                                   |
 
 The test suite runs entirely offline: adapters are tested as pure
-request-building/response-parsing functions, the tool loop against a
-scripted in-memory adapter, and the HTTP/streaming stack end-to-end
-against an in-process `com.sun.net.httpserver` standing in for each
-provider.
+request-building/response-parsing functions, the tool loop and evals
+against scripted in-memory adapters, and the HTTP/streaming stack
+end-to-end against an in-process `com.sun.net.httpserver` standing in
+for each provider.
 
 ## Design notes
 
-- Dependencies are minimal on purpose: `org.clojure/data.json` is the
-  only runtime dependency; HTTP is JDK 11+ `java.net.http`.
 - Providers are *accounts/endpoints*; adapters are *wire protocols*.
   Two entries in `:providers` can share an adapter (e.g. OpenAI and
   Groq), which is how one codebase talks to everything.
 - The verb is `generate`, not `chat` — a zero-shot completion isn't a
   conversation, and a conversation is just `generate` over accumulated
   messages.
+- Evals are data all the way down: suites are EDN, results are maps,
+  and every production response is already an eval case in waiting.
 
 ## License
 
 Copyright © 2026 Kira Howe
 
-Distributed under the Eclipse Public License version 2.0.
+Distributed under the MIT License.

@@ -3,12 +3,12 @@
 
   Provider config keys:
     :adapter    :anthropic
-    :api-key    required — usually #env \"ANTHROPIC_API_KEY\"
+    :api-key    required — usually #env ANTHROPIC_API_KEY
     :base-url   optional, defaults to https://api.anthropic.com
     :version    optional anthropic-version header, defaults to 2023-06-01
     :headers    optional map of extra headers (e.g. anthropic-beta)
     :timeout-ms optional request timeout"
-  (:require [clojure.data.json :as json]
+  (:require [charred.api :as json]
             [clojure.string :as str]
             [kirahowe.clj-llm.http :as http]
             [kirahowe.clj-llm.provider :as provider]))
@@ -164,7 +164,7 @@
                            :name (:name b)
                            :input (if (str/blank? (:json b))
                                     {}
-                                    (json/read-str (:json b) :key-fn keyword))}
+                                    (json/read-json (:json b) :key-fn keyword))}
                           b))
                       blocks)]
     (parse-response {:content content
@@ -181,7 +181,7 @@
       (throw (ex-info (str "Provider " (or (:kirahowe.clj-llm.config/name provider-config)
                                            ":anthropic")
                            " has no :api-key. Set it in your config file, e.g. "
-                           ":api-key #env \"ANTHROPIC_API_KEY\"")
+                           ":api-key #env ANTHROPIC_API_KEY")
                       {:type ::missing-api-key}))))
 
 (defn- endpoint [provider-config]
@@ -204,7 +204,7 @@
            http-req
            (fn [state line]
              (if-let [data (http/sse-data line)]
-               (reduce-event state (json/read-str data :key-fn keyword) on-chunk)
+               (reduce-event state (json/read-json data :key-fn keyword) on-chunk)
                state))
            initial-stream-state)
           finalize-stream)

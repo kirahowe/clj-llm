@@ -1,61 +1,42 @@
 (ns kirahowe.clj-llm.config
   "Loading and resolving clj-llm configuration.
 
-  Configuration is plain EDN data, typically loaded from a file so that
-  nothing — API keys, base URLs, model names — is ever hard coded in
-  source. The reader supports a small set of tags for wiring in values
-  from the environment:
+  Configuration is plain EDN data, read with aero — so API keys, base
+  URLs and model names live in config files, never in source, and you
+  get aero's full tag set (#env, #or, #profile, #include, #ref, ...):
 
-    #env \"ANTHROPIC_API_KEY\"      value of an environment variable (nil if unset)
-    #or [#env \"A\" \"fallback\"]     first non-nil value in the vector
-    #profile {:dev ... :prod ...}   value for the active profile
+    {:providers
+     {:anthropic {:adapter :anthropic
+                  :api-key #env ANTHROPIC_API_KEY}}
+     :models {:smart {:provider :anthropic :model \"claude-sonnet-4-6\"}}
+     :defaults {:model :smart
+                :max-tokens #profile {:dev 1024 :default 4096}}}
 
-  A config map has this shape:
+  Providers are *accounts/endpoints* (an Anthropic account, a Groq
+  account, a local Ollama server). The :adapter key selects the wire
+  protocol — see kirahowe.clj-llm.provider. Models are aliases so
+  application code can say :fast or :smart and the vendor mapping lives
+  in config. :defaults are merged into every request; that includes
+  :on-interaction, a hook that receives every response record (see
+  kirahowe.clj-llm/generate) — the raw material for evals.
 
-    {:providers {<name> {:adapter <adapter-kw> :api-key ... :base-url ...}}
-     :models    {<alias> {:provider <name> :model \"model-id\"}}
-     :defaults  {:model <alias> :embedding-model <alias> :max-tokens 4096 ...}}
-
-  Providers are *accounts/endpoints* (an Anthropic account, a Groq account,
-  a local Ollama server). The :adapter key selects the wire protocol —
-  see kirahowe.clj-llm.provider. Models are aliases so application code can
-  say :fast or :smart and the mapping lives in config."
-  (:require [clojure.edn :as edn]
-            [clojure.java.io :as io]
+  The rest of the library only ever sees the resulting map, so configs
+  built by hand, by aero directly, or by an integrant system all work
+  the same."
+  (:require [aero.core :as aero]
             [clojure.string :as str]))
 
-(defn- getenv [v]
-  (System/getenv (str v)))
-
-(defn readers
-  "EDN reader map for config files. opts:
-    :profile  keyword selecting the branch of #profile maps (default :default)
-    :env      1-arg fn used to look up #env vars (default System/getenv);
-              override in tests."
-  [{:keys [profile env] :or {env getenv}}]
-  {'env     (fn [v] (env (name v)))
-   'or      (fn [vs] (reduce (fn [acc v] (if (some? acc) (reduced acc) v)) nil vs))
-   'profile (fn [m] (if (contains? m profile)
-                      (get m profile)
-                      (get m :default)))})
+(defn read-config
+  "Read an EDN config file with aero. `source` is anything
+  clojure.java.io/reader accepts — a path string, File, URL, or
+  (io/resource ...). `opts` are aero options, e.g. {:profile :prod}."
+  ([source] (read-config source {}))
+  ([source opts] (aero/read-config source opts)))
 
 (defn read-config-string
-  "Parse a config EDN string. See `read-config` for opts."
+  "Parse a config EDN string (mostly useful in tests)."
   ([s] (read-config-string s {}))
-  ([s opts]
-   (edn/read-string {:readers (readers opts)} s)))
-
-(defn read-config
-  "Read a config EDN file. `source` is anything clojure.java.io/reader
-  accepts — a path string, File, URL, or (io/resource ...).
-
-  opts:
-    :profile  keyword selecting the branch of #profile maps
-    :env      1-arg fn used to look up #env vars (default System/getenv)"
-  ([source] (read-config source {}))
-  ([source opts]
-   (with-open [r (java.io.PushbackReader. (io/reader source))]
-     (edn/read {:readers (readers opts)} r))))
+  ([s opts] (read-config (java.io.StringReader. s) opts)))
 
 (defn provider-name
   "The name a provider config was registered under in :providers."

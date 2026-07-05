@@ -33,4 +33,19 @@
                                 {:city city :temperature-c 21 :sky "clear"})}]})
 
   ;; Embeddings
-  (llm/embed config "A short sentence to embed."))
+  (llm/embed config "A short sentence to embed.")
+
+  ;; Evals: copy resources/clj-llm/eval-suite.example.edn to
+  ;; evals/suite.edn, then compare variants (also: bb eval)
+  (require '[kirahowe.clj-llm.eval :as eval])
+  (def report (eval/run config "evals/suite.edn"))
+  (eval/print-summary report)
+
+  ;; Model-graded scoring for criteria without mechanical ground truth
+  (eval/run config
+            {:cases [{:id :tone :input "Explain TCP to a five-year-old."}]
+             :variants [{:id :baseline :model :smart}
+                        {:id :fast :model :fast}]
+             :scorers [(eval/llm-judge
+                        {:model :smart
+                         :criteria "Age-appropriate, accurate, no jargon."})]}))

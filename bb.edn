@@ -20,6 +20,10 @@
   fmt:fix {:doc "Fix formatting with cljfmt"
            :task (clojure "-M:cljfmt fix src test dev")}
 
+  eval {:doc "Run an eval suite: bb eval [suite.edn [llm.edn [profile]]]"
+        :task (apply clojure "-M:dev" "-m" "kirahowe.clj-llm.eval"
+                     *command-line-args*)}
+
   ci {:doc "Run everything CI runs: format check, lint, tests"
       :depends [fmt lint test:integrant]}
 

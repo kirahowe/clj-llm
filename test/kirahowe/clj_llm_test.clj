@@ -45,7 +45,37 @@
       (let [request (first @requests)]
         (is (= "fake-1" (:model request)))
         (is (= [{:role :user :content "Why is the sky blue?"}]
-               (:messages request)))))))
+               (:messages request)))))
+    (testing "the response doubles as an interaction record"
+      (is (= :generate (:op response)))
+      (is (number? (:latency-ms response)))
+      (is (inst? (:started-at response)))
+      (is (= "fake-1" (get-in response [:request :model])))
+      (is (= [{:role :user :content "Why is the sky blue?"}]
+             (get-in response [:request :messages]))))))
+
+(deftest interaction-records
+  (testing ":on-interaction from config :defaults receives the full record"
+    (let [records (atom [])
+          config (scripted-config [(text-response "ok")]
+                                  :defaults {:on-interaction
+                                             #(swap! records conj %)})
+          response (llm/generate config "hi")]
+      (is (= [response] @records))))
+
+  (testing "tool :fns are scrubbed from the :request echo"
+    (let [config (scripted-config [(text-response "ok")])
+          response (llm/generate config "hi"
+                                 {:tools [{:name "t" :parameters {}
+                                           :fn (fn [_] "x")}]})]
+      (is (= [{:name "t" :parameters {}}]
+             (get-in response [:request :tools])))))
+
+  (testing "a failing hook never breaks the call"
+    (let [config (scripted-config [(text-response "ok")]
+                                  :defaults {:on-interaction
+                                             (fn [_] (throw (ex-info "boom" {})))})]
+      (is (= "ok" (:text (llm/generate config "hi")))))))
 
 (deftest request-shapes-and-defaults
   (testing ":prompt shorthand and opts merging"
