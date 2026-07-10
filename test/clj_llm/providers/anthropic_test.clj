@@ -4,8 +4,8 @@
 
 (deftest build-request-basics
   (let [body (anthropic/build-request
-              {:clj-llm/model "claude-sonnet-4-6"
-               :clj-llm/messages [{:role :user :content "hi"}]})]
+              {:lib/model "claude-sonnet-4-6"
+               :lib/messages [{:role :user :content "hi"}]})]
     (is (= "claude-sonnet-4-6" (:model body)))
     (is (= anthropic/default-max-tokens (:max_tokens body)))
     (is (= [{:role "user" :content "hi"}] (:messages body)))
@@ -13,57 +13,57 @@
     (is (not (contains? body :stream)))))
 
 (deftest build-request-system-handling
-  (testing "explicit :clj-llm/system"
+  (testing "explicit :lib/system"
     (is (= "be brief"
            (:system (anthropic/build-request
-                     {:clj-llm/model "m" :clj-llm/system "be brief"
-                      :clj-llm/messages [{:role :user :content "hi"}]})))))
-  (testing ":system role messages are lifted out of :clj-llm/messages"
+                     {:lib/model "m" :lib/system "be brief"
+                      :lib/messages [{:role :user :content "hi"}]})))))
+  (testing ":system role messages are lifted out of :lib/messages"
     (let [body (anthropic/build-request
-                {:clj-llm/model "m"
-                 :clj-llm/messages [{:role :system :content "be brief"}
-                                    {:role :user :content "hi"}]})]
+                {:lib/model "m"
+                 :lib/messages [{:role :system :content "be brief"}
+                                {:role :user :content "hi"}]})]
       (is (= "be brief" (:system body)))
       (is (= [{:role "user" :content "hi"}] (:messages body))))))
 
 (deftest build-request-tools-and-options
   (let [body (anthropic/build-request
-              {:clj-llm/model "m"
-               :clj-llm/messages [{:role :user :content "hi"}]
-               :clj-llm/max-tokens 100
-               :clj-llm/temperature 0.5
-               :clj-llm/tools [{:name "get-weather"
-                                :description "weather lookup"
-                                :parameters {:type "object"}}]
-               :clj-llm/options {:top_k 5}})]
+              {:lib/model "m"
+               :lib/messages [{:role :user :content "hi"}]
+               :lib/max-tokens 100
+               :lib/temperature 0.5
+               :lib/tools [{:name "get-weather"
+                            :description "weather lookup"
+                            :parameters {:type "object"}}]
+               :lib/options {:top_k 5}})]
     (is (= 100 (:max_tokens body)))
     (is (= 0.5 (:temperature body)))
     (is (= [{:name "get-weather"
              :description "weather lookup"
              :input_schema {:type "object"}}]
            (:tools body)))
-    (is (= 5 (:top_k body)) ":clj-llm/options merge into the wire request")))
+    (is (= 5 (:top_k body)) ":lib/options merge into the wire request")))
 
 (deftest build-request-streaming
   (let [body (anthropic/build-request
-              {:clj-llm/model "m"
-               :clj-llm/messages [{:role :user :content "hi"}]}
+              {:lib/model "m"
+               :lib/messages [{:role :user :content "hi"}]}
               {:stream? true})]
     (is (true? (:stream body)))))
 
 (deftest tool-conversation-wire-format
   (let [body (anthropic/build-request
-              {:clj-llm/model "m"
-               :clj-llm/messages [{:role :user :content "Weather in Berlin and Paris?"}
-                                  {:role :assistant :content "Checking."
-                                   :tool-calls [{:id "t1" :name "get-weather"
-                                                 :arguments {:city "Berlin"}}
-                                                {:id "t2" :name "get-weather"
-                                                 :arguments {:city "Paris"}}]}
-                                  {:role :tool :tool-call-id "t1" :name "get-weather"
-                                   :content "21C"}
-                                  {:role :tool :tool-call-id "t2" :name "get-weather"
-                                   :content "19C"}]})
+              {:lib/model "m"
+               :lib/messages [{:role :user :content "Weather in Berlin and Paris?"}
+                              {:role :assistant :content "Checking."
+                               :tool-calls [{:id "t1" :name "get-weather"
+                                             :arguments {:city "Berlin"}}
+                                            {:id "t2" :name "get-weather"
+                                             :arguments {:city "Paris"}}]}
+                              {:role :tool :tool-call-id "t1" :name "get-weather"
+                               :content "21C"}
+                              {:role :tool :tool-call-id "t2" :name "get-weather"
+                               :content "19C"}]})
         [_ assistant results] (:messages body)]
     (testing "assistant tool calls become tool_use content blocks"
       (is (= "assistant" (:role assistant)))

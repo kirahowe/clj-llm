@@ -11,27 +11,27 @@
   (llm/generate config "In one sentence, why is the sky blue?")
 
   ;; Pick a model alias per call
-  (llm/generate config "Say hi." {:clj-llm/model :fast})
+  (llm/generate config "Say hi." {:lib/model :fast})
 
-  ;; Multi-turn: conversations are data — thread :clj-llm/messages back in
+  ;; Multi-turn: conversations are data — thread :lib/messages back in
   (def r1 (llm/generate config "Name a prime number between 100 and 200."))
-  (llm/generate config {:clj-llm/messages (conj (:clj-llm/messages r1)
-                                                {:role :user :content "Why is it prime?"})})
+  (llm/generate config {:lib/messages (conj (:lib/messages r1)
+                                            {:role :user :content "Why is it prime?"})})
 
   ;; Streaming — chunks carry :type; ignore types you don't recognize
   (llm/generate config "Tell a two-sentence story."
-                {:clj-llm/on-chunk (fn [{:keys [type text]}]
-                                     (when (= :text type) (print text) (flush)))})
+                {:lib/on-chunk (fn [{:keys [type text]}]
+                                 (when (= :text type) (print text) (flush)))})
 
   ;; Tools
   (llm/generate config "What's the weather in Berlin?"
-                {:clj-llm/tools [{:name "get-weather"
-                                  :description "Look up current weather for a city"
-                                  :parameters {:type "object"
-                                               :properties {:city {:type "string"}}
-                                               :required ["city"]}
-                                  :fn (fn [{:keys [city]}]
-                                        {:city city :temperature-c 21 :sky "clear"})}]})
+                {:lib/tools [{:name "get-weather"
+                              :description "Look up current weather for a city"
+                              :parameters {:type "object"
+                                           :properties {:city {:type "string"}}
+                                           :required ["city"]}
+                              :fn (fn [{:keys [city]}]
+                                    {:city city :temperature-c 21 :sky "clear"})}]})
 
   ;; Embeddings
   (llm/embed config "A short sentence to embed.")
@@ -44,19 +44,19 @@
 
   ;; Model-graded scoring for criteria without mechanical ground truth
   (eval/run config
-            #:clj-llm{:cases [#:clj-llm{:id :tone :input "Explain TCP to a five-year-old."}]
-                      :variants [#:clj-llm{:id :baseline :model :smart}
-                                 #:clj-llm{:id :fast :model :fast}]
-                      :scorers [(eval/llm-judge
-                                 {:model :smart
-                                  :criteria "Age-appropriate, accurate, no jargon."})]})
+            #:lib{:cases [#:lib{:id :tone :input "Explain TCP to a five-year-old."}]
+                  :variants [#:lib{:id :baseline :model :smart}
+                             #:lib{:id :fast :model :fast}]
+                  :scorers [(eval/llm-judge
+                             {:model :smart
+                              :criteria "Age-appropriate, accurate, no jargon."})]})
 
-  ;; System-level evals: :clj-llm/task runs your whole pipeline instead of
+  ;; System-level evals: :lib/task runs your whole pipeline instead of
   ;; a single LLM call — scorers see whatever it returns
   (eval/run config
-            #:clj-llm{:cases [#:clj-llm{:id :faq :input "How do I reset my password?"
-                                        :expected "reset link"}]
-                      :task (fn [{:keys [config case]}]
+            #:lib{:cases [#:lib{:id :faq :input "How do I reset my password?"
+                                :expected "reset link"}]
+                  :task (fn [{:keys [config case]}]
                             ;; e.g. retrieval + prompt assembly + generate
-                              (llm/generate config (:clj-llm/input case)))
-                      :scorers [:includes]}))
+                          (llm/generate config (:lib/input case)))
+                  :scorers [:includes]}))

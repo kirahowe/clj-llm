@@ -5,45 +5,45 @@
 ;; secrets come from the environment via #env — nothing sensitive belongs
 ;; in this file.
 ;;
-;; Keys the library defines are namespaced :clj-llm/...; every other key is
+;; Keys the library defines are namespaced :lib/...; every other key is
 ;; yours. Inside a provider map, the unqualified keys (:api-key, :base-url,
 ;; ...) belong to that provider's adapter.
-#:clj-llm{:providers
-          {;; Anthropic's first-party API
-           :anthropic {:clj-llm/adapter :anthropic
-                       :api-key #env ANTHROPIC_API_KEY}
+#:lib{:providers
+      {;; Anthropic's first-party API
+       :anthropic {:lib/adapter :anthropic
+                   :api-key #env ANTHROPIC_API_KEY}
 
-           ;; OpenAI — the :openai adapter speaks the chat-completions protocol
-           :openai {:clj-llm/adapter :openai
-                    :api-key #env OPENAI_API_KEY}
+       ;; OpenAI — the :openai adapter speaks the chat-completions protocol
+       :openai {:lib/adapter :openai
+                :api-key #env OPENAI_API_KEY}
 
-           ;; ...which also covers any OpenAI-compatible service via :base-url
-           :groq {:clj-llm/adapter :openai
-                  :base-url "https://api.groq.com/openai/v1"
-                  :api-key #env GROQ_API_KEY}
+       ;; ...which also covers any OpenAI-compatible service via :base-url
+       :groq {:lib/adapter :openai
+              :base-url "https://api.groq.com/openai/v1"
+              :api-key #env GROQ_API_KEY}
 
-           :openrouter {:clj-llm/adapter :openai
-                        :base-url "https://openrouter.ai/api/v1"
-                        :api-key #env OPENROUTER_API_KEY}
+       :openrouter {:lib/adapter :openai
+                    :base-url "https://openrouter.ai/api/v1"
+                    :api-key #env OPENROUTER_API_KEY}
 
-           ;; Local models through Ollama's native API
-           :local {:clj-llm/adapter :ollama
-                   :base-url #or [#env OLLAMA_HOST "http://localhost:11434"]}}
+       ;; Local models through Ollama's native API
+       :local {:lib/adapter :ollama
+               :base-url #or [#env OLLAMA_HOST "http://localhost:11434"]}}
 
-          ;; Aliases: application code asks for :smart or :fast; which provider
-          ;; and model that means is a config decision, swappable without a
-          ;; code change.
-          :models
-          {:smart      #:clj-llm{:provider :anthropic :model "claude-sonnet-4-6"}
-           :fast       #:clj-llm{:provider :groq :model "llama-3.3-70b-versatile"}
-           :local-chat #:clj-llm{:provider :local :model "llama3.2"}
-           :embeddings #:clj-llm{:provider :openai :model "text-embedding-3-small"}}
+      ;; Aliases: application code asks for :smart or :fast; which provider
+      ;; and model that means is a config decision, swappable without a
+      ;; code change.
+      :models
+      {:smart      #:lib{:provider :anthropic :model "claude-sonnet-4-6"}
+       :fast       #:lib{:provider :groq :model "llama-3.3-70b-versatile"}
+       :local-chat #:lib{:provider :local :model "llama3.2"}
+       :embeddings #:lib{:provider :openai :model "text-embedding-3-small"}}
 
-          ;; Defaults applied to every request (and the default model aliases).
-          ;; :clj-llm/on-interaction (a fn of one response record) is the hook for
-          ;; collecting every interaction — the raw material for evals; set it
-          ;; from code when you build/load the config.
-          :defaults
-          #:clj-llm{:model :smart
-                    :embedding-model :embeddings
-                    :max-tokens #profile {:dev 1024 :default 4096}}}
+      ;; Defaults applied to every request (and the default model aliases).
+      ;; :lib/on-interaction (a fn of one response record) is the hook for
+      ;; collecting every interaction — the raw material for evals; set it
+      ;; from code when you build/load the config.
+      :defaults
+      #:lib{:model :smart
+            :embedding-model :embeddings
+            :max-tokens #profile {:dev 1024 :default 4096}}}

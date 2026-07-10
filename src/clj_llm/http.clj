@@ -41,14 +41,14 @@
 
 (defn- error! [url status body]
   (throw (ex-info (str "LLM provider returned HTTP " status " for " url)
-                  {:type :clj-llm/http-error
+                  {:type :lib/http-error
                    :status status
                    :url url
                    :body body})))
 
 (defn post-json
   "POST `body` as JSON to `url`. Returns {:status n :body <parsed JSON,
-  keyword keys>}. Throws ex-info {:type :clj-llm/http-error :status ...
+  keyword keys>}. Throws ex-info {:type :lib/http-error :status ...
   :body ...} on a non-2xx response."
   [{:keys [url] :as request}]
   (let [^HttpResponse response (.send ^HttpClient @client

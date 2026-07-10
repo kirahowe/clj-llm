@@ -12,7 +12,7 @@ The premise: you can't build well with LLMs unless measuring what they do is as 
 (def config (llm/read-config "llm.edn"))
 
 (llm/generate config "Why is the sky blue?")
-;; => #:clj-llm{:text "Sunlight scattering..." :usage {...} :latency-ms 640 ...}
+;; => #:lib{:text "Sunlight scattering..." :usage {...} :latency-ms 640 ...}
 ```
 
 And the part the library is built around:
@@ -50,7 +50,7 @@ Dependencies are deliberately light: [aero](https://github.com/juxt/aero), [char
 
 ## One rule before the examples
 
-Every key the library defines in maps you author or store — config, requests, responses, eval suites, reports — is namespaced `:clj-llm/...`. Any other key in those maps is yours, forever. Conversation-shaped structures (messages, tool definitions, tool calls, usage, stream chunks, scores) keep their plain industry-standard keys (`:role`, `:content`, `:score`, ...), and *that* plain keyspace is reserved by the library. Clojure's namespaced-map literal keeps the qualified form light: `#:clj-llm{:prompt "hi" :model :fast}`.
+Every key the library defines in maps you author or store — config, requests, responses, eval suites, reports — is namespaced `:lib/...`. Any other key in those maps is yours, forever. Conversation-shaped structures (messages, tool definitions, tool calls, usage, stream chunks, scores) keep their plain industry-standard keys (`:role`, `:content`, `:score`, ...), and *that* plain keyspace is reserved by the library. Clojure's namespaced-map literal keeps the qualified form light: `#:lib{:prompt "hi" :model :fast}`.
 
 ## How this book runs
 

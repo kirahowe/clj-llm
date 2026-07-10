@@ -1,31 +1,41 @@
 (ns clj-llm.provider
   "The adapter boundary. An adapter is a set of multimethod
-  implementations dispatching on the :clj-llm/adapter key of a provider
+  implementations dispatching on the :lib/adapter key of a provider
   config map. clj-llm ships adapters for :anthropic, :openai (anything
   speaking the OpenAI chat-completions protocol) and :ollama; add your
-  own by requiring this namespace and implementing `generate!` (and
-  optionally `embed!`, `start`, `stop`) for your own dispatch keyword.
+  own by requiring this namespace and implementing `-generate!` (and
+  optionally `-embed!`, `-start`, `-stop`) for your own dispatch keyword.
 
-  All four multimethods take the raw provider config (so custom,
-  adapter-owned keys flow through untouched) and a trailing `opts` map.
-  `opts` is harness-level context — empty today, reserved for future
-  cross-cutting concerns like cancellation or telemetry. Adapters should
-  accept it and may ignore it.
+  The namespace is split into an SPI and an API, in the style of
+  integrant's init-key/init:
 
-  `generate!` receives a normalized request whose clj-llm-owned keys are
-  namespaced:
+  - The `-`-prefixed multimethods (`-generate!`, `-embed!`, `-start`,
+    `-stop`) are the SPI: adapters implement them, nobody calls them
+    directly. Each has exactly one fixed signature, with a trailing
+    `opts` map of harness-level context — empty today, reserved for
+    cross-cutting concerns like cancellation or telemetry. Implement the
+    full signature; ignore `opts` until it means something.
 
-    #:clj-llm{:model       \"model-id\"          string, already resolved
-            :messages    [{:role :user :content \"...\"} ...]
-            :system      \"...\"               optional system prompt
-            :max-tokens  4096                  optional
-            :temperature 0.7                   optional
-            :tools       [{:name \"...\" :description \"...\"
-                           :parameters {...json schema...} :fn (fn [args] ...)}]
-            :on-chunk    (fn [{:keys [type text]}])  optional streaming callback;
-                                               chunks have :type (:text today)
-            :options     {...}}                provider-specific passthrough,
-                                               merged into the wire request
+  - The unprefixed functions (`generate!`, `embed!`, `start`, `stop`)
+    are the API: callers use them, and `opts` is genuinely optional.
+    They also give the library a permanent seam for future validation or
+    instrumentation around adapter calls.
+
+  `-generate!` receives the raw provider config (so custom, adapter-owned
+  keys flow through untouched) and a normalized request whose
+  library-owned keys are namespaced:
+
+    #:lib{:model       \"model-id\"          string, already resolved
+          :messages    [{:role :user :content \"...\"} ...]
+          :system      \"...\"               optional system prompt
+          :max-tokens  4096                  optional
+          :temperature 0.7                   optional
+          :tools       [{:name \"...\" :description \"...\"
+                         :parameters {...json schema...} :fn (fn [args] ...)}]
+          :on-chunk    (fn [{:keys [type text]}])  optional streaming callback;
+                                             chunks have :type (:text today)
+          :options     {...}}                provider-specific passthrough,
+                                             merged into the wire request
 
   Messages, tools, tool calls and usage are plain-keyed protocol
   structures (see clj-llm.spec). Message roles are :system, :user,
@@ -55,63 +65,98 @@
   - New result keys are always optional; :message, :usage,
     :finish-reason and :raw remain sufficient.
 
-  - The multimethod signatures are frozen: (generate! provider-config
-    request opts), (embed! provider-config request opts),
-    (start provider-config opts), (stop provider-config opts). Anything
-    new travels inside `request` or `opts`, never as a new positional
-    argument.
+  - The SPI signatures are frozen: (-generate! provider-config request
+    opts), (-embed! provider-config request opts),
+    (-start provider-config opts), (-stop provider-config opts).
+    Anything new travels inside `request` or `opts`, never as a new
+    positional argument. (The unprefixed API functions may grow
+    conveniences — they are the library's, not the SPI.)
 
-  - Any future multimethod added to this namespace ships with a
+  - Any future SPI multimethod added to this namespace ships with a
     :default implementation, so existing adapters never have to change
     to keep loading.
 
   - Unqualified keys in provider config maps other than those read by
     the adapter itself will never gain library-level meaning; only
-    :clj-llm/-qualified keys are clj-llm's.")
+    :lib/-qualified keys are the library's.")
 
 (defn- dispatch [provider-config & _]
-  (:clj-llm/adapter provider-config))
+  (:lib/adapter provider-config))
 
-(defmulti generate!
-  "Execute one text-generation request against a provider:
-  (generate! provider-config request opts). Dispatches on the provider
-  config's :clj-llm/adapter. See the namespace docstring for the
-  request/result contract. Most callers want clj-llm.core/generate, which
-  resolves config, applies defaults and runs the tool loop."
+;; ---------------------------------------------------------------------------
+;; SPI — adapters implement these; each has exactly one fixed signature
+
+(defmulti -generate!
+  "SPI: execute one text-generation request against a provider.
+  Implement as (-generate! provider-config request opts) for your
+  :lib/adapter keyword; see the namespace docstring for the
+  request/result contract. Callers should use `generate!` instead."
   dispatch)
 
-(defmulti embed!
-  "Compute embeddings: (embed! provider-config request opts). Request:
-  #:clj-llm{:model \"...\" :input [\"text\" ...] :options {...}}. Returns
-  {:embeddings [[floats] ...] :model ... :usage ... :raw ...}."
+(defmulti -embed!
+  "SPI: compute embeddings. Implement as (-embed! provider-config
+  request opts); request is #:lib{:model \"...\" :input [\"text\" ...]
+  :options {...}} and the result is {:embeddings [[floats] ...]
+  :model ... :usage ... :raw ...}. Callers should use `embed!` instead."
   dispatch)
 
-(defmulti start
-  "Optional lifecycle hook: (start provider-config opts). Prepare a
-  provider for use (e.g. fetch an OAuth token) and return the (possibly
-  augmented) provider config. Called by the integrant bindings on system
-  start. Defaults to identity."
+(defmulti -start
+  "SPI: optional lifecycle hook, (-start provider-config opts). Prepare
+  a provider for use (e.g. fetch an OAuth token) and return the
+  (possibly augmented) provider config. Defaults to identity. Callers
+  should use `start` instead."
   dispatch)
 
-(defmulti stop
-  "Optional lifecycle hook: (stop provider-config opts). Release
-  anything `start` acquired. Defaults to a no-op."
+(defmulti -stop
+  "SPI: optional lifecycle hook, (-stop provider-config opts). Release
+  anything `-start` acquired. Defaults to a no-op. Callers should use
+  `stop` instead."
   dispatch)
 
-(defmethod start :default [provider-config _opts] provider-config)
-(defmethod stop :default [_provider-config _opts] nil)
+(defmethod -start :default [provider-config _opts] provider-config)
+(defmethod -stop :default [_provider-config _opts] nil)
 
 (defn- unknown-adapter! [provider-config op]
   (throw (ex-info (str "No " op " implementation for adapter "
-                       (pr-str (:clj-llm/adapter provider-config))
+                       (pr-str (:lib/adapter provider-config))
                        ". Built-in adapters (:anthropic, :openai, :ollama) are "
                        "loaded by requiring clj-llm.core.")
-                  {:type :clj-llm/unknown-adapter
-                   :adapter (:clj-llm/adapter provider-config)
+                  {:type :lib/unknown-adapter
+                   :adapter (:lib/adapter provider-config)
                    :op op})))
 
-(defmethod generate! :default [provider-config _request _opts]
-  (unknown-adapter! provider-config "generate!"))
+(defmethod -generate! :default [provider-config _request _opts]
+  (unknown-adapter! provider-config "-generate!"))
 
-(defmethod embed! :default [provider-config _request _opts]
-  (unknown-adapter! provider-config "embed!"))
+(defmethod -embed! :default [provider-config _request _opts]
+  (unknown-adapter! provider-config "-embed!"))
+
+;; ---------------------------------------------------------------------------
+;; API — callers use these; opts is optional
+
+(defn generate!
+  "Execute one text-generation request against a provider. Dispatches
+  to the adapter's `-generate!` implementation; `opts` defaults to {}.
+  Most callers want clj-llm.core/generate, which resolves config,
+  applies defaults and runs the tool loop."
+  ([provider-config request] (-generate! provider-config request {}))
+  ([provider-config request opts] (-generate! provider-config request opts)))
+
+(defn embed!
+  "Compute embeddings via the adapter's `-embed!` implementation;
+  `opts` defaults to {}. Most callers want clj-llm.core/embed."
+  ([provider-config request] (-embed! provider-config request {}))
+  ([provider-config request opts] (-embed! provider-config request opts)))
+
+(defn start
+  "Run a provider's `-start` lifecycle hook, returning the (possibly
+  augmented) provider config; `opts` defaults to {}. Called by the
+  integrant bindings on system start."
+  ([provider-config] (-start provider-config {}))
+  ([provider-config opts] (-start provider-config opts)))
+
+(defn stop
+  "Run a provider's `-stop` lifecycle hook; `opts` defaults to {}.
+  Called by the integrant bindings on system halt."
+  ([provider-config] (-stop provider-config {}))
+  ([provider-config opts] (-stop provider-config opts)))

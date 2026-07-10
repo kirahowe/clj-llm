@@ -18,14 +18,14 @@
 ;; Look again at any response — alongside the answer it carries the fully resolved request (replayable; tool functions are scrubbed), token usage, latency, a timestamp and the operation:
 
 (select-keys (llm/generate config "What is the capital of France?")
-             [:clj-llm/request :clj-llm/usage :clj-llm/latency-ms :clj-llm/started-at :clj-llm/op])
+             [:lib/request :lib/usage :lib/latency-ms :lib/started-at :lib/op])
 
-;; A response with these keys is called an *interaction record*. To collect records from live traffic, set `:clj-llm/on-interaction` — a function of one record — once in your config's defaults. Here we collect into an atom; in production this is typically an append to a log, a queue, or a table:
+;; A response with these keys is called an *interaction record*. To collect records from live traffic, set `:lib/on-interaction` — a function of one record — once in your config's defaults. Here we collect into an atom; in production this is typically an append to a log, a queue, or a table:
 
 (def interactions (atom []))
 
 (def traffic-config
-  (assoc-in config [:clj-llm/defaults :clj-llm/on-interaction]
+  (assoc-in config [:lib/defaults :lib/on-interaction]
             (fn [record] (swap! interactions conj record))))
 
 (run! #(llm/generate traffic-config %)
@@ -41,15 +41,15 @@
 ;; A suite is plain data: **cases** say what to test, **variants** say what to compare, **scorers** say what good looks like. Inline as a map, or in an EDN file read with the same aero reader as config:
 
 (def suite
-  #:clj-llm{:cases [#:clj-llm{:id :capital
-                              :input "What is the capital of France?"
-                              :expected "Paris"}
-                    #:clj-llm{:id :arithmetic
-                              :input "What is 17 * 23? Reply with only the number."
-                              :expected "391"}]
-            :variants [#:clj-llm{:id :baseline :model :smart}
-                       #:clj-llm{:id :cheap :model :fast}]
-            :scorers [:includes]})
+  #:lib{:cases [#:lib{:id :capital
+                      :input "What is the capital of France?"
+                      :expected "Paris"}
+                #:lib{:id :arithmetic
+                      :input "What is 17 * 23? Reply with only the number."
+                      :expected "391"}]
+        :variants [#:lib{:id :baseline :model :smart}
+                   #:lib{:id :cheap :model :fast}]
+        :scorers [:includes]})
 
 (def report (eval/run config suite))
 
@@ -57,37 +57,37 @@
 
 (kind/code (with-out-str (eval/print-summary report)))
 
-;; The report is data all the way down. `:clj-llm/results` holds one entry per case×variant with the full response and its scores; `:clj-llm/summary` aggregates per variant; and the report records its own provenance — when it ran and how big it was — so a stored report is meaningfully comparable with next month's:
+;; The report is data all the way down. `:lib/results` holds one entry per case×variant with the full response and its scores; `:lib/summary` aggregates per variant; and the report records its own provenance — when it ran and how big it was — so a stored report is meaningfully comparable with next month's:
 
-(select-keys report [:clj-llm/run-at :clj-llm/case-count :clj-llm/variant-count])
+(select-keys report [:lib/run-at :lib/case-count :lib/variant-count])
 
-(first (:clj-llm/results report))
+(first (:lib/results report))
 
-;; A **variant** is just a bundle of request keys — model, system prompt, temperature, tools, anything `generate` accepts — so "compare two models", "compare two prompts" and "compare with/without tools" are all the same operation. Cases accept either `:clj-llm/input` (a prompt) or `:clj-llm/messages` (a full conversation), which is exactly what makes collected records replayable:
+;; A **variant** is just a bundle of request keys — model, system prompt, temperature, tools, anything `generate` accepts — so "compare two models", "compare two prompts" and "compare with/without tools" are all the same operation. Cases accept either `:lib/input` (a prompt) or `:lib/messages` (a full conversation), which is exactly what makes collected records replayable:
 
 (let [record (first @interactions)]
   (-> (eval/run config
-                #:clj-llm{:cases [#:clj-llm{:id :replayed
-                                            :messages (:clj-llm/messages (:clj-llm/request record))
-                                            :expected "Paris"}]
-                          :scorers [:includes]})
-      :clj-llm/summary))
+                #:lib{:cases [#:lib{:id :replayed
+                                    :messages (:lib/messages (:lib/request record))
+                                    :expected "Paris"}]
+                      :scorers [:includes]})
+      :lib/summary))
 
 ;; That loop — traffic in, records out, records back in as cases — is the intended way suites grow. You don't invent test cases; you harvest them.
 
 ;; ## Scoring
 
-;; Three built-ins cover mechanical ground truth: `:exact-match` (trimmed equality with `:clj-llm/expected`), `:includes` (case-insensitive containment), and `:matches` (regex). A custom scorer is any function of the context map `{:config _ :case _ :variant _ :response _}` returning `{:score <0.0-1.0>}` plus anything else worth keeping. Unqualified keys on a case are yours, so scorers can read custom fields:
+;; Three built-ins cover mechanical ground truth: `:exact-match` (trimmed equality with `:lib/expected`), `:includes` (case-insensitive containment), and `:matches` (regex). A custom scorer is any function of the context map `{:config _ :case _ :variant _ :response _}` returning `{:score <0.0-1.0>}` plus anything else worth keeping. Unqualified keys on a case are yours, so scorers can read custom fields:
 
 (defn terse-enough?
   "Full marks under 60 characters, scaled down to zero at 300."
   [{:keys [response]}]
-  (let [n (count (str (:clj-llm/text response)))]
+  (let [n (count (str (:lib/text response)))]
     {:score (max 0.0 (min 1.0 (/ (- 300.0 n) 240.0)))
      :length n}))
 
-(-> (eval/run config (assoc suite :clj-llm/scorers [:includes terse-enough?]))
-    :clj-llm/summary)
+(-> (eval/run config (assoc suite :lib/scorers [:includes terse-enough?]))
+    :lib/summary)
 
 ;; In EDN suite files, scorers can be qualified symbols — `my.app.evals/terse-enough?` — resolved with `requiring-resolve` at run time, so file-based suites reach scorers defined in your codebase.
 
@@ -95,7 +95,7 @@
 
 (kind/code
  "(eval/run config
-           (assoc suite :clj-llm/scorers
+           (assoc suite :lib/scorers
                   [:includes
                    (eval/llm-judge {:model :smart
                                     :criteria \"Factually accurate, and answers the question directly.\"})]))")
@@ -104,34 +104,34 @@
 
 ;; ## Evals for systems, not just calls
 
-;; By default, a case×variant runs a single `generate` call. But the question you actually care about is usually one level up: is my *pipeline* good — retrieval plus prompt assembly plus the model plus post-processing? Point `:clj-llm/task` at any function of `{:keys [config case variant]}` that returns a response-shaped map, and the same cases, scorers, thresholds and reports apply to the whole system:
+;; By default, a case×variant runs a single `generate` call. But the question you actually care about is usually one level up: is my *pipeline* good — retrieval plus prompt assembly plus the model plus post-processing? Point `:lib/task` at any function of `{:keys [config case variant]}` that returns a response-shaped map, and the same cases, scorers, thresholds and reports apply to the whole system:
 
 (defn faq-pipeline
   "A toy 'system': look up a canned document, then generate with it in the prompt. A real one would do retrieval, ranking, templating..."
   [{:keys [config case]}]
   (let [doc "Support doc: to reset a password, click 'Forgot password' and follow the emailed reset link."]
     (llm/generate config
-                  #:clj-llm{:system (str "Answer using this document:\n" doc)
-                            :prompt (:clj-llm/input case)})))
+                  #:lib{:system (str "Answer using this document:\n" doc)
+                        :prompt (:lib/input case)})))
 
 (-> (eval/run config
-              #:clj-llm{:cases [#:clj-llm{:id :password-reset
-                                          :input "How do I reset my password?"
-                                          :expected "reset link"}]
-                        :task faq-pipeline
-                        :scorers [:includes]})
-    :clj-llm/summary)
+              #:lib{:cases [#:lib{:id :password-reset
+                                  :input "How do I reset my password?"
+                                  :expected "reset link"}]
+                    :task faq-pipeline
+                    :scorers [:includes]})
+    :lib/summary)
 
-;; The task contract is deliberately thin: return at least `:clj-llm/text` (or whatever your scorers read); return real `generate` responses — as `faq-pipeline` does — and latency and token summaries stay accurate for free. Variants still work with a custom task: the variant map is passed to your task, so variants can select pipeline configurations, not just request keys. In EDN suites, `:clj-llm/task` can be a qualified symbol.
+;; The task contract is deliberately thin: return at least `:lib/text` (or whatever your scorers read); return real `generate` responses — as `faq-pipeline` does — and latency and token summaries stay accurate for free. Variants still work with a custom task: the variant map is passed to your task, so variants can select pipeline configurations, not just request keys. In EDN suites, `:lib/task` can be a qualified symbol.
 
 ;; This is the sense in which evals here are "tests for LLM calls at the system level": the unit under test is whatever function you hand the harness, and a raw LLM call is merely the default.
 
 ;; ## Thresholds: evals as a CI gate
 
-;; A report you have to eyeball is a report that stops being read. `:clj-llm/thresholds` sets a minimum mean score per scorer; the report then carries `:clj-llm/passed?`, and the CLI (`bb eval`, or `clojure -M:dev -m clj-llm.eval`) exits non-zero when a threshold is missed or any case errors — so a suite drops into CI like any other test suite:
+;; A report you have to eyeball is a report that stops being read. `:lib/thresholds` sets a minimum mean score per scorer; the report then carries `:lib/passed?`, and the CLI (`bb eval`, or `clojure -M:dev -m clj-llm.eval`) exits non-zero when a threshold is missed or any case errors — so a suite drops into CI like any other test suite:
 
-(let [gated (assoc suite :clj-llm/thresholds {:includes 0.9})]
-  (select-keys (eval/run config gated) [:clj-llm/passed? :clj-llm/thresholds]))
+(let [gated (assoc suite :lib/thresholds {:includes 0.9})]
+  (select-keys (eval/run config gated) [:lib/passed? :lib/thresholds]))
 
 ;; ## Concurrency and cost
 
@@ -139,10 +139,10 @@
 
 ;; ## The workflow, end to end
 
-;; 1. Ship with `:clj-llm/on-interaction` collecting records from day one — it's one line of config.
+;; 1. Ship with `:lib/on-interaction` collecting records from day one — it's one line of config.
 ;; 2. When behavior matters enough to protect, promote records (or write cases by hand) into a suite file; start with `:includes`-style mechanical scorers.
 ;; 3. When you want to change something — model, prompt, temperature, pipeline — add it as a variant and run the suite. The summary table *is* the decision.
 ;; 4. Add an `llm-judge` for the qualities you can't regex.
-;; 5. Set `:clj-llm/thresholds` and wire `bb eval` into CI, so quality regressions fail builds the way broken tests do.
+;; 5. Set `:lib/thresholds` and wire `bb eval` into CI, so quality regressions fail builds the way broken tests do.
 
 ;; Planned extensions (deliberately additive — see the roadmap chapter): response caching for cheap re-runs, EDN-expressible judges, per-case weights, and report-diffing helpers.

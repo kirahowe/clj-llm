@@ -6,7 +6,7 @@
   point :base-url at the service.
 
   Provider config keys (adapter-owned, unqualified by design):
-    :clj-llm/adapter       :openai
+    :lib/adapter       :openai
     :api-key             usually required — e.g. #env OPENAI_API_KEY;
                          may be omitted for local servers that don't check auth
     :base-url            optional, defaults to https://api.openai.com/v1
@@ -48,7 +48,7 @@
 (defn build-request
   "Build the wire-format request body (a map ready to be sent as JSON)."
   ([request] (build-request request {}))
-  ([{:clj-llm/keys [model messages system max-tokens temperature tools options]}
+  ([{:lib/keys [model messages system max-tokens temperature tools options]}
     {:keys [stream? legacy-max-tokens?]}]
    (let [messages (if (and system (not-any? #(= :system (:role %)) messages))
                     (into [{:role :system :content system}] messages)
@@ -160,8 +160,8 @@
            {"authorization" (str "Bearer " key)})
          (:headers provider-config)))
 
-(defmethod provider/generate! :openai
-  [provider-config {:clj-llm/keys [on-chunk] :as request} _opts]
+(defmethod provider/-generate! :openai
+  [provider-config {:lib/keys [on-chunk] :as request} _opts]
   (let [http-req {:url (str (base-url provider-config) "/chat/completions")
                   :headers (headers provider-config)
                   :timeout-ms (:timeout-ms provider-config)
@@ -180,8 +180,8 @@
           finalize-stream)
       (-> (http/post-json http-req) :body parse-response))))
 
-(defmethod provider/embed! :openai
-  [provider-config {:clj-llm/keys [model input options]} _opts]
+(defmethod provider/-embed! :openai
+  [provider-config {:lib/keys [model input options]} _opts]
   (let [{:keys [body]} (http/post-json
                         {:url (str (base-url provider-config) "/embeddings")
                          :headers (headers provider-config)

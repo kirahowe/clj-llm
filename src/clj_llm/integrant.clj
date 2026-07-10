@@ -34,16 +34,16 @@
                 (or (io/resource resource)
                     (throw (ex-info (str "Config resource not found on classpath: "
                                          resource)
-                                    {:type :clj-llm/config-not-found :resource resource})))
+                                    {:type :lib/config-not-found :resource resource})))
                 reader-opts)
       :else (throw (ex-info "Provide one of :path, :resource or :config"
-                            {:type :clj-llm/config-not-found :opts opts})))))
+                            {:type :lib/config-not-found :opts opts})))))
 
 (defmethod ig/init-key :clj-llm/config
   [_ opts]
   (-> (load-config opts)
-      (update :clj-llm/providers update-vals #(provider/start % {}))))
+      (update :lib/providers update-vals provider/start)))
 
 (defmethod ig/halt-key! :clj-llm/config
   [_ config]
-  (run! #(provider/stop % {}) (vals (:clj-llm/providers config))))
+  (run! provider/stop (vals (:lib/providers config))))
