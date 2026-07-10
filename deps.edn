@@ -2,8 +2,8 @@
 
  :deps {org.clojure/clojure {:mvn/version "1.12.5"}
         aero/aero {:mvn/version "1.1.6"}
-        clj-http/clj-http {:mvn/version "3.13.0"}
-        com.cnuernber/charred {:mvn/version "1.034"}}
+        com.cnuernber/charred {:mvn/version "1.034"}
+        metosin/malli {:mvn/version "0.20.1"}}
 
  :aliases
  {;; Development REPL: adds dev/ and test/ plus optional integrations.
@@ -13,13 +13,19 @@
   ;; Run the test suite: clojure -M:test
   :test {:extra-paths ["test"]
          :extra-deps {org.clojure/tools.namespace {:mvn/version "1.5.1"}}
-         :main-opts ["-m" "kirahowe.clj-llm.test-runner"]}
+         :main-opts ["-m" "assay.test-runner"]}
 
   ;; Run tests with integrant on the classpath to exercise the optional bindings.
   :test-integrant {:extra-paths ["test"]
                    :extra-deps {org.clojure/tools.namespace {:mvn/version "1.5.1"}
                                 integrant/integrant {:mvn/version "0.13.1"}}
-                   :main-opts ["-m" "kirahowe.clj-llm.test-runner"]}
+                   :main-opts ["-m" "assay.test-runner"]}
+
+  ;; Render the documentation book with Clay: clojure -M:book
+  :book {:extra-paths ["notebooks"]
+         :extra-deps {org.scicloj/clay {:mvn/version "2.0.16"}
+                      integrant/integrant {:mvn/version "0.13.1"}}
+         :main-opts ["-m" "book"]}
 
   ;; Formatting: clojure -M:cljfmt check|fix
   :cljfmt {:extra-deps {dev.weavejester/cljfmt {:mvn/version "0.13.0"}}

@@ -1,5 +1,5 @@
-(ns kirahowe.clj-llm.integrant
-  "Optional Integrant bindings. Integrant is not a dependency of clj-llm —
+(ns assay.integrant
+  "Optional Integrant bindings. Integrant is not a dependency of assay —
   add it to your own deps and require this namespace to get the keys below.
 
   The library itself is stateless, so the component is simply the resolved
@@ -7,13 +7,13 @@
   chance to run (custom adapters can use it for things like OAuth token
   acquisition), and halt calls `stop`.
 
-    {:kirahowe.clj-llm/config {:path \"llm.edn\" :profile :prod}}
+    {:assay/config {:path \"llm.edn\" :profile :prod}}
 
     (defmethod ig/init-key ::my-handler [_ {:keys [llm]}]
-      (fn [request] ... (llm/generate llm ...) ...))
+      (fn [request] ... (assay/generate llm ...) ...))
 
-    {:kirahowe.clj-llm/config {:path \"llm.edn\"}
-     ::my-handler {:llm (ig/ref :kirahowe.clj-llm/config)}}
+    {:assay/config {:path \"llm.edn\"}
+     ::my-handler {:llm (ig/ref :assay/config)}}
 
   Init options — exactly one config source:
     :path      path to an EDN config file
@@ -22,8 +22,8 @@
   Remaining options (e.g. :profile) are passed through to aero."
   (:require [clojure.java.io :as io]
             [integrant.core :as ig]
-            [kirahowe.clj-llm.config :as config]
-            [kirahowe.clj-llm.provider :as provider]))
+            [assay.config :as config]
+            [assay.provider :as provider]))
 
 (defn- load-config [{:keys [path resource config] :as opts}]
   (let [reader-opts (dissoc opts :path :resource :config)]
@@ -34,16 +34,16 @@
                 (or (io/resource resource)
                     (throw (ex-info (str "Config resource not found on classpath: "
                                          resource)
-                                    {:type ::config-not-found :resource resource})))
+                                    {:type :assay/config-not-found :resource resource})))
                 reader-opts)
       :else (throw (ex-info "Provide one of :path, :resource or :config"
-                            {:type ::config-not-found :opts opts})))))
+                            {:type :assay/config-not-found :opts opts})))))
 
-(defmethod ig/init-key :kirahowe.clj-llm/config
+(defmethod ig/init-key :assay/config
   [_ opts]
   (-> (load-config opts)
-      (update :providers update-vals provider/start)))
+      (update :assay/providers update-vals #(provider/start % {}))))
 
-(defmethod ig/halt-key! :kirahowe.clj-llm/config
+(defmethod ig/halt-key! :assay/config
   [_ config]
-  (run! provider/stop (vals (:providers config))))
+  (run! #(provider/stop % {}) (vals (:assay/providers config))))

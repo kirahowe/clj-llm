@@ -12,3 +12,7 @@ pom.xml.asc
 /llm.edn
 .hgignore
 .hg/
+
+# Clay/Quarto book build artifacts (docs/ is committed only when publishing)
+.clay/
+temp/

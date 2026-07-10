@@ -1,20 +1,24 @@
-(ns kirahowe.clj-llm.providers.openai
+(ns assay.providers.openai
   "Adapter for the OpenAI chat-completions protocol. Because the protocol
   is a de-facto standard, this one adapter covers OpenAI itself plus
   OpenRouter, Groq, Together, Mistral's La Plateforme, vLLM, LM Studio,
   llama.cpp server and anything else exposing /chat/completions — just
   point :base-url at the service.
 
-  Provider config keys:
-    :adapter    :openai
-    :api-key    usually required — e.g. #env OPENAI_API_KEY;
-                may be omitted for local servers that don't check auth
-    :base-url   optional, defaults to https://api.openai.com/v1
-    :headers    optional map of extra headers
-    :timeout-ms optional request timeout"
+  Provider config keys (adapter-owned, unqualified by design):
+    :assay/adapter       :openai
+    :api-key             usually required — e.g. #env OPENAI_API_KEY;
+                         may be omitted for local servers that don't check auth
+    :base-url            optional, defaults to https://api.openai.com/v1
+    :headers             optional map of extra headers
+    :timeout-ms          optional request timeout
+    :legacy-max-tokens?  optional; the request's max-tokens is sent as
+                         max_completion_tokens (the current protocol field)
+                         by default — set true for older OpenAI-compatible
+                         servers that only understand max_tokens"
   (:require [charred.api :as json]
-            [kirahowe.clj-llm.http :as http]
-            [kirahowe.clj-llm.provider :as provider]))
+            [assay.http :as http]
+            [assay.provider :as provider]))
 
 ;; ---------------------------------------------------------------------------
 ;; Request building
@@ -43,18 +47,21 @@
 
 (defn build-request
   "Build the wire-format request body (a map ready to be sent as JSON)."
-  [{:keys [model messages system max-tokens temperature tools stream options]}]
-  (let [messages (if (and system (not-any? #(= :system (:role %)) messages))
-                   (into [{:role :system :content system}] messages)
-                   messages)]
-    (cond-> {:model model
-             :messages (mapv message->wire messages)}
-      max-tokens (assoc :max_tokens max-tokens)
-      temperature (assoc :temperature temperature)
-      (seq tools) (assoc :tools (mapv tool->wire tools))
-      stream (assoc :stream true
-                    :stream_options {:include_usage true})
-      options (merge options))))
+  ([request] (build-request request {}))
+  ([{:assay/keys [model messages system max-tokens temperature tools options]}
+    {:keys [stream? legacy-max-tokens?]}]
+   (let [messages (if (and system (not-any? #(= :system (:role %)) messages))
+                    (into [{:role :system :content system}] messages)
+                    messages)]
+     (cond-> {:model model
+              :messages (mapv message->wire messages)}
+       max-tokens (assoc (if legacy-max-tokens? :max_tokens :max_completion_tokens)
+                         max-tokens)
+       temperature (assoc :temperature temperature)
+       (seq tools) (assoc :tools (mapv tool->wire tools))
+       stream? (assoc :stream true
+                      :stream_options {:include_usage true})
+       options (merge options)))))
 
 ;; ---------------------------------------------------------------------------
 ;; Response parsing
@@ -100,7 +107,7 @@
 
 (defn reduce-chunk
   "Fold one parsed SSE chunk into the stream accumulator, invoking
-  on-chunk with {:text delta} for each content delta."
+  on-chunk with {:type :text :text delta} for each content delta."
   [state chunk on-chunk]
   (let [choice (first (:choices chunk))
         delta (:delta choice)
@@ -110,7 +117,7 @@
                 (:finish_reason choice) (assoc :finish-reason (:finish_reason choice)))]
     (as-> state state
       (if-let [text (:content delta)]
-        (do (when on-chunk (on-chunk {:text text}))
+        (do (when on-chunk (on-chunk {:type :text :text text}))
             (update state :content str text))
         state)
       (reduce (fn [state tc]
@@ -154,11 +161,13 @@
          (:headers provider-config)))
 
 (defmethod provider/generate! :openai
-  [provider-config {:keys [on-chunk] :as request}]
+  [provider-config {:assay/keys [on-chunk] :as request} _opts]
   (let [http-req {:url (str (base-url provider-config) "/chat/completions")
                   :headers (headers provider-config)
                   :timeout-ms (:timeout-ms provider-config)
-                  :body (build-request (assoc request :stream (boolean on-chunk)))}]
+                  :body (build-request request
+                                       {:stream? (boolean on-chunk)
+                                        :legacy-max-tokens? (:legacy-max-tokens? provider-config)})}]
     (if on-chunk
       (-> (http/post-json-lines
            http-req
@@ -172,7 +181,7 @@
       (-> (http/post-json http-req) :body parse-response))))
 
 (defmethod provider/embed! :openai
-  [provider-config {:keys [model input options]}]
+  [provider-config {:assay/keys [model input options]} _opts]
   (let [{:keys [body]} (http/post-json
                         {:url (str (base-url provider-config) "/embeddings")
                          :headers (headers provider-config)

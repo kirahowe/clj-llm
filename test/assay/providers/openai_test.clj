@@ -1,45 +1,58 @@
-(ns kirahowe.clj-llm.providers.openai-test
+(ns assay.providers.openai-test
   (:require [clojure.test :refer [deftest is testing]]
-            [kirahowe.clj-llm.providers.openai :as openai]))
+            [assay.providers.openai :as openai]))
 
 (deftest build-request-basics
   (let [body (openai/build-request
-              {:model "gpt-4o-mini"
-               :messages [{:role :user :content "hi"}]
-               :max-tokens 128
-               :temperature 0.3})]
+              {:assay/model "gpt-4o-mini"
+               :assay/messages [{:role :user :content "hi"}]
+               :assay/max-tokens 128
+               :assay/temperature 0.3})]
     (is (= "gpt-4o-mini" (:model body)))
     (is (= [{:role "user" :content "hi"}] (:messages body)))
-    (is (= 128 (:max_tokens body)))
+    (is (= 128 (:max_completion_tokens body))
+        "max-tokens is sent as max_completion_tokens by default")
+    (is (not (contains? body :max_tokens)))
     (is (= 0.3 (:temperature body)))
     (is (not (contains? body :stream)))))
 
+(deftest build-request-legacy-max-tokens
+  (let [body (openai/build-request
+              {:assay/model "gpt-4o-mini"
+               :assay/messages [{:role :user :content "hi"}]
+               :assay/max-tokens 128}
+              {:legacy-max-tokens? true})]
+    (is (= 128 (:max_tokens body))
+        ":legacy-max-tokens? true sends the older max_tokens field")
+    (is (not (contains? body :max_completion_tokens)))))
+
 (deftest build-request-system-prepended
   (let [body (openai/build-request
-              {:model "m" :system "be brief"
-               :messages [{:role :user :content "hi"}]})]
+              {:assay/model "m" :assay/system "be brief"
+               :assay/messages [{:role :user :content "hi"}]})]
     (is (= [{:role "system" :content "be brief"}
             {:role "user" :content "hi"}]
            (:messages body)))))
 
 (deftest build-request-streaming-asks-for-usage
   (let [body (openai/build-request
-              {:model "m" :stream true
-               :messages [{:role :user :content "hi"}]})]
+              {:assay/model "m"
+               :assay/messages [{:role :user :content "hi"}]}
+              {:stream? true})]
     (is (true? (:stream body)))
     (is (= {:include_usage true} (:stream_options body)))))
 
 (deftest tool-conversation-wire-format
   (let [body (openai/build-request
-              {:model "m"
-               :messages [{:role :user :content "weather?"}
-                          {:role :assistant :content nil
-                           :tool-calls [{:id "call_1" :name "get-weather"
-                                         :arguments {:city "Berlin"}}]}
-                          {:role :tool :tool-call-id "call_1"
-                           :name "get-weather" :content "21C"}]
-               :tools [{:name "get-weather" :description "d"
-                        :parameters {:type "object"}}]})
+              {:assay/model "m"
+               :assay/messages [{:role :user :content "weather?"}
+                                {:role :assistant :content nil
+                                 :tool-calls [{:id "call_1" :name "get-weather"
+                                               :arguments {:city "Berlin"}}]}
+                                {:role :tool :tool-call-id "call_1"
+                                 :name "get-weather" :content "21C"}]
+               :assay/tools [{:name "get-weather" :description "d"
+                              :parameters {:type "object"}}]})
         [_ assistant result] (:messages body)]
     (is (= [{:type "function"
              :function {:name "get-weather" :description "d"
@@ -88,12 +101,13 @@
                    {:choices [{:delta {} :finish_reason "tool_calls"}]}
                    {:choices [] :usage {:prompt_tokens 20 :completion_tokens 11}}]
         streamed (atom [])
-        on-chunk #(swap! streamed conj (:text %))
+        on-chunk #(swap! streamed conj %)
         parsed (-> (reduce #(openai/reduce-chunk %1 %2 on-chunk)
                            openai/initial-stream-state
                            chunks-in)
                    openai/finalize-stream)]
-    (is (= ["" "Hel" "lo"] @streamed))
+    (is (= ["" "Hel" "lo"] (map :text @streamed)))
+    (is (every? #(= :text (:type %)) @streamed))
     (is (= "Hello" (get-in parsed [:message :content])))
     (is (= [{:id "call_1" :name "get-weather" :arguments {:city "Berlin"}}]
            (get-in parsed [:message :tool-calls])))

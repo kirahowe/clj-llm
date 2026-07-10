@@ -15,13 +15,16 @@
         :task (shell "clj-kondo --lint src test")}
 
   fmt {:doc "Check formatting with cljfmt"
-       :task (clojure "-M:cljfmt check src test dev")}
+       :task (clojure "-M:cljfmt" "check" "src" "test" "dev")}
 
   fmt:fix {:doc "Fix formatting with cljfmt"
            :task (clojure "-M:cljfmt fix src test dev")}
 
+  book {:doc "Render the documentation book with Clay + Quarto into docs/"
+        :task (clojure "-M:book")}
+
   eval {:doc "Run an eval suite: bb eval [suite.edn [llm.edn [profile]]]"
-        :task (apply clojure "-M:dev" "-m" "kirahowe.clj-llm.eval"
+        :task (apply clojure "-M:dev" "-m" "assay.eval"
                      *command-line-args*)}
 
   ci {:doc "Run everything CI runs: format check, lint, tests"

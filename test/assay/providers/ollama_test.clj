@@ -1,25 +1,32 @@
-(ns kirahowe.clj-llm.providers.ollama-test
+(ns assay.providers.ollama-test
   (:require [clojure.test :refer [deftest is testing]]
-            [kirahowe.clj-llm.providers.ollama :as ollama]))
+            [assay.providers.ollama :as ollama]))
 
 (deftest build-request-basics
   (let [body (ollama/build-request
-              {:model "llama3.2"
-               :messages [{:role :user :content "hi"}]
-               :max-tokens 64
-               :temperature 0.1})]
+              {:assay/model "llama3.2"
+               :assay/messages [{:role :user :content "hi"}]
+               :assay/max-tokens 64
+               :assay/temperature 0.1})]
     (is (= "llama3.2" (:model body)))
     (is (= [{:role "user" :content "hi"}] (:messages body)))
     (is (false? (:stream body)) "non-streaming must be explicit for Ollama")
     (testing "sampling knobs map to Ollama's :options"
       (is (= {:temperature 0.1 :num_predict 64} (:options body))))))
 
+(deftest build-request-streaming
+  (let [body (ollama/build-request
+              {:assay/model "llama3.2"
+               :assay/messages [{:role :user :content "hi"}]}
+              {:stream? true})]
+    (is (true? (:stream body)))))
+
 (deftest build-request-system-and-tools
   (let [body (ollama/build-request
-              {:model "m" :system "be brief"
-               :messages [{:role :user :content "hi"}]
-               :tools [{:name "get-weather" :description "d"
-                        :parameters {:type "object"}}]})]
+              {:assay/model "m" :assay/system "be brief"
+               :assay/messages [{:role :user :content "hi"}]
+               :assay/tools [{:name "get-weather" :description "d"
+                              :parameters {:type "object"}}]})]
     (is (= {:role "system" :content "be brief"} (first (:messages body))))
     (is (= [{:type "function"
              :function {:name "get-weather" :description "d"
@@ -28,13 +35,13 @@
 
 (deftest tool-conversation-wire-format
   (let [body (ollama/build-request
-              {:model "m"
-               :messages [{:role :user :content "weather?"}
-                          {:role :assistant :content ""
-                           :tool-calls [{:id "call_0" :name "get-weather"
-                                         :arguments {:city "Berlin"}}]}
-                          {:role :tool :tool-call-id "call_0"
-                           :name "get-weather" :content "21C"}]})
+              {:assay/model "m"
+               :assay/messages [{:role :user :content "weather?"}
+                                {:role :assistant :content ""
+                                 :tool-calls [{:id "call_0" :name "get-weather"
+                                               :arguments {:city "Berlin"}}]}
+                                {:role :tool :tool-call-id "call_0"
+                                 :name "get-weather" :content "21C"}]})
         [_ assistant result] (:messages body)]
     (testing "arguments stay a structured map (Ollama-native, not JSON string)"
       (is (= [{:function {:name "get-weather" :arguments {:city "Berlin"}}}]
@@ -69,12 +76,13 @@
                    {:message {:content ""} :done true :done_reason "stop"
                     :prompt_eval_count 10 :eval_count 2}]
         streamed (atom [])
-        on-chunk #(swap! streamed conj (:text %))
+        on-chunk #(swap! streamed conj %)
         parsed (-> (reduce #(ollama/reduce-chunk %1 %2 on-chunk)
                            ollama/initial-stream-state
                            chunks-in)
                    ollama/finalize-stream)]
-    (is (= ["Hel" "lo"] @streamed))
+    (is (= ["Hel" "lo"] (map :text @streamed)))
+    (is (every? #(= :text (:type %)) @streamed))
     (is (= "Hello" (get-in parsed [:message :content])))
     (is (= :stop (:finish-reason parsed)))
     (is (= "llama3.2" (:model parsed)))

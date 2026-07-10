@@ -1,11 +1,11 @@
-(ns kirahowe.clj-llm.integration-test
+(ns assay.integration-test
   "End-to-end tests over real HTTP against an in-process server standing
   in for each provider — exercises the java.net.http transport, JSON
   encoding, header handling and SSE/NDJSON streaming with no network."
   (:require [charred.api :as json]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing use-fixtures]]
-            [kirahowe.clj-llm :as llm])
+            [assay.core :as llm])
   (:import (com.sun.net.httpserver HttpExchange HttpHandler HttpServer)
            (java.net InetSocketAddress)
            (java.nio.charset StandardCharsets)))
@@ -110,26 +110,26 @@
 (use-fixtures :each with-server)
 
 (defn- config []
-  {:providers {:anthropic {:adapter :anthropic
-                           :base-url (str *base-url* "/anthropic")
-                           :api-key "test-key"}
-               :compat {:adapter :openai
-                        :base-url (str *base-url* "/openai/v1")
-                        :api-key "compat-key"}
-               :local {:adapter :ollama
-                       :base-url (str *base-url* "/ollama")}
-               :broken {:adapter :anthropic
-                        :base-url (str *base-url* "/broken")
-                        :api-key "wrong"}}
-   :models {:default {:provider :anthropic :model "claude-sonnet-4-6"}
-            :embeddings {:provider :local :model "nomic-embed-text"}}
-   :defaults {:model :default :embedding-model :embeddings}})
+  #:assay{:providers {:anthropic {:assay/adapter :anthropic
+                                  :base-url (str *base-url* "/anthropic")
+                                  :api-key "test-key"}
+                      :compat {:assay/adapter :openai
+                               :base-url (str *base-url* "/openai/v1")
+                               :api-key "compat-key"}
+                      :local {:assay/adapter :ollama
+                              :base-url (str *base-url* "/ollama")}
+                      :broken {:assay/adapter :anthropic
+                               :base-url (str *base-url* "/broken")
+                               :api-key "wrong"}}
+          :models {:default #:assay{:provider :anthropic :model "claude-sonnet-4-6"}
+                   :embeddings #:assay{:provider :local :model "nomic-embed-text"}}
+          :defaults #:assay{:model :default :embedding-model :embeddings}})
 
 (deftest anthropic-round-trip
   (let [response (llm/generate (config) "hello")]
-    (is (= "Hi from fake Claude" (:text response)))
-    (is (= :stop (:finish-reason response)))
-    (is (= {:input-tokens 11 :output-tokens 5} (:usage response)))
+    (is (= "Hi from fake Claude" (:assay/text response)))
+    (is (= :stop (:assay/finish-reason response)))
+    (is (= {:input-tokens 11 :output-tokens 5} (:assay/usage response)))
     (testing "wire request carried auth and version headers"
       (let [{:keys [headers body]} (first @requests)]
         (is (= ["test-key"] (get headers "x-api-key")))
@@ -138,8 +138,8 @@
         (is (= [{:role "user" :content "hello"}] (:messages body)))))))
 
 (deftest openai-compatible-round-trip
-  (let [response (llm/generate (config) "hello" {:model "compat/test-model"})]
-    (is (= "plain" (:text response)))
+  (let [response (llm/generate (config) "hello" {:assay/model "compat/test-model"})]
+    (is (= "plain" (:assay/text response)))
     (testing "bearer auth header"
       (is (= ["Bearer compat-key"]
              (get-in (first @requests) [:headers "authorization"]))))))
@@ -147,34 +147,37 @@
 (deftest openai-streaming-round-trip
   (let [chunks (atom [])
         response (llm/generate (config) "hello"
-                               {:model "compat/test-model"
-                                :on-chunk #(swap! chunks conj (:text %))})]
-    (is (= "streamed" (str/join @chunks)))
-    (is (= "streamed" (:text response)))
-    (is (= :stop (:finish-reason response)))
-    (is (= {:input-tokens 8 :output-tokens 2} (:usage response)))))
+                               {:assay/model "compat/test-model"
+                                :assay/on-chunk #(swap! chunks conj %)})]
+    (is (= "streamed" (str/join (map :text @chunks))))
+    (is (every? #(= :text (:type %)) @chunks))
+    (is (= "streamed" (:assay/text response)))
+    (is (= :stop (:assay/finish-reason response)))
+    (is (= {:input-tokens 8 :output-tokens 2} (:assay/usage response)))))
 
 (deftest ollama-streaming-round-trip
   (let [chunks (atom [])
         response (llm/generate (config) "hello"
-                               {:model "local/llama3.2"
-                                :on-chunk #(swap! chunks conj (:text %))})]
-    (is (= "local" (str/join @chunks)))
-    (is (= "local" (:text response)))
-    (is (= {:input-tokens 4 :output-tokens 2} (:usage response)))))
+                               {:assay/model "local/llama3.2"
+                                :assay/on-chunk #(swap! chunks conj %)})]
+    (is (= "local" (str/join (map :text @chunks))))
+    (is (every? #(= :text (:type %)) @chunks))
+    (is (= "local" (:assay/text response)))
+    (is (= {:input-tokens 4 :output-tokens 2} (:assay/usage response)))))
 
 (deftest embeddings-round-trip
   (let [response (llm/embed (config) "embed me")]
-    (is (= [0.25 0.5 0.75] (:embedding response)))
-    (is (= :local (:provider response)))
+    (is (= [0.25 0.5 0.75] (:assay/embedding response)))
+    (is (= :local (:assay/provider response)))
     (is (= {:model "nomic-embed-text" :input ["embed me"]}
            (:body (first @requests))))))
 
 (deftest http-errors-carry-status-and-body
   (let [ex (try
-             (llm/generate (config) "hello" {:model "broken/any"})
+             (llm/generate (config) "hello" {:assay/model "broken/any"})
              nil
              (catch Exception e e))]
     (is (some? ex))
+    (is (= :assay/http-error (:type (ex-data ex))))
     (is (= 401 (:status (ex-data ex))))
     (is (= "bad key" (get-in (ex-data ex) [:body :error :message])))))

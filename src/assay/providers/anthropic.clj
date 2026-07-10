@@ -1,17 +1,17 @@
-(ns kirahowe.clj-llm.providers.anthropic
+(ns assay.providers.anthropic
   "Adapter for the Anthropic Messages API (api.anthropic.com/v1/messages).
 
-  Provider config keys:
-    :adapter    :anthropic
-    :api-key    required — usually #env ANTHROPIC_API_KEY
-    :base-url   optional, defaults to https://api.anthropic.com
-    :version    optional anthropic-version header, defaults to 2023-06-01
-    :headers    optional map of extra headers (e.g. anthropic-beta)
-    :timeout-ms optional request timeout"
+  Provider config keys (adapter-owned, unqualified by design):
+    :assay/adapter  :anthropic
+    :api-key        required — usually #env ANTHROPIC_API_KEY
+    :base-url       optional, defaults to https://api.anthropic.com
+    :version        optional anthropic-version header, defaults to 2023-06-01
+    :headers        optional map of extra headers (e.g. anthropic-beta)
+    :timeout-ms     optional request timeout"
   (:require [charred.api :as json]
             [clojure.string :as str]
-            [kirahowe.clj-llm.http :as http]
-            [kirahowe.clj-llm.provider :as provider]))
+            [assay.http :as http]
+            [assay.provider :as provider]))
 
 (def default-max-tokens 4096)
 
@@ -62,17 +62,19 @@
 
 (defn build-request
   "Build the wire-format request body (a map ready to be sent as JSON)."
-  [{:keys [model messages system max-tokens temperature tools stream options]}]
-  (let [system (or system
-                   (some #(when (= :system (:role %)) (:content %)) messages))]
-    (cond-> {:model model
-             :max_tokens (or max-tokens default-max-tokens)
-             :messages (messages->wire messages)}
-      system (assoc :system system)
-      temperature (assoc :temperature temperature)
-      (seq tools) (assoc :tools (mapv tool->wire tools))
-      stream (assoc :stream true)
-      options (merge options))))
+  ([request] (build-request request {}))
+  ([{:assay/keys [model messages system max-tokens temperature tools options]}
+    {:keys [stream?]}]
+   (let [system (or system
+                    (some #(when (= :system (:role %)) (:content %)) messages))]
+     (cond-> {:model model
+              :max_tokens (or max-tokens default-max-tokens)
+              :messages (messages->wire messages)}
+       system (assoc :system system)
+       temperature (assoc :temperature temperature)
+       (seq tools) (assoc :tools (mapv tool->wire tools))
+       stream? (assoc :stream true)
+       options (merge options)))))
 
 ;; ---------------------------------------------------------------------------
 ;; Response parsing
@@ -114,7 +116,7 @@
 
 (defn reduce-event
   "Fold one parsed SSE event into the stream accumulator, invoking
-  on-chunk with {:text delta} for each text delta."
+  on-chunk with {:type :text :text delta} for each text delta."
   [state {:keys [type index] :as event} on-chunk]
   (case type
     "message_start"
@@ -135,7 +137,7 @@
     (let [delta (:delta event)]
       (case (:type delta)
         "text_delta"
-        (do (when on-chunk (on-chunk {:text (:text delta)}))
+        (do (when on-chunk (on-chunk {:type :text :text (:text delta)}))
             (update-in state [:blocks index :text] str (:text delta)))
         "input_json_delta"
         (update-in state [:blocks index :json] str (:partial_json delta))
@@ -149,7 +151,7 @@
     "error"
     (throw (ex-info (str "Anthropic stream error: "
                          (get-in event [:error :message]))
-                    {:type ::stream-error :event event}))
+                    {:type :assay/stream-error :event event}))
 
     state))
 
@@ -178,11 +180,11 @@
 
 (defn- api-key! [provider-config]
   (or (:api-key provider-config)
-      (throw (ex-info (str "Provider " (or (:kirahowe.clj-llm.config/name provider-config)
+      (throw (ex-info (str "Provider " (or (:assay.config/name provider-config)
                                            ":anthropic")
                            " has no :api-key. Set it in your config file, e.g. "
                            ":api-key #env ANTHROPIC_API_KEY")
-                      {:type ::missing-api-key}))))
+                      {:type :assay/missing-api-key}))))
 
 (defn- endpoint [provider-config]
   (str (or (:base-url provider-config) "https://api.anthropic.com")
@@ -194,11 +196,11 @@
          (:headers provider-config)))
 
 (defmethod provider/generate! :anthropic
-  [provider-config {:keys [on-chunk] :as request}]
+  [provider-config {:assay/keys [on-chunk] :as request} _opts]
   (let [http-req {:url (endpoint provider-config)
                   :headers (headers provider-config)
                   :timeout-ms (:timeout-ms provider-config)
-                  :body (build-request (assoc request :stream (boolean on-chunk)))}]
+                  :body (build-request request {:stream? (boolean on-chunk)})}]
     (if on-chunk
       (-> (http/post-json-lines
            http-req
@@ -211,8 +213,8 @@
       (-> (http/post-json http-req) :body parse-response))))
 
 (defmethod provider/embed! :anthropic
-  [provider-config _]
+  [provider-config _request _opts]
   (throw (ex-info (str "Anthropic has no embeddings API. Configure an :openai "
                        "or :ollama provider for embeddings.")
-                  {:type ::unsupported
-                   :provider (:kirahowe.clj-llm.config/name provider-config)})))
+                  {:type :assay/unsupported
+                   :provider (:assay.config/name provider-config)})))

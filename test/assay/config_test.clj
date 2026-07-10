@@ -1,6 +1,6 @@
-(ns kirahowe.clj-llm.config-test
+(ns assay.config-test
   (:require [clojure.test :refer [deftest is testing]]
-            [kirahowe.clj-llm.config :as config]))
+            [assay.config :as config]))
 
 ;; A variable virtually guaranteed to exist, and one guaranteed not to.
 (def set-var "HOME")
@@ -30,21 +30,21 @@
       (is (= {:max-tokens 4096} (config/read-config-string s {:profile :prod}))))))
 
 (def test-config
-  {:providers {:acme {:adapter :openai
-                      :base-url "https://llm.acme.test/v1"
-                      :api-key "k"}
-               :local {:adapter :ollama}}
-   :models {:smart {:provider :acme :model "acme-large"}
-            :embeddings {:provider :local :model "nomic-embed-text"}}
-   :defaults {:model :smart
-              :embedding-model :embeddings
-              :max-tokens 512}})
+  #:assay{:providers {:acme {:assay/adapter :openai
+                             :base-url "https://llm.acme.test/v1"
+                             :api-key "k"}
+                      :local {:assay/adapter :ollama}}
+          :models {:smart #:assay{:provider :acme :model "acme-large"}
+                   :embeddings #:assay{:provider :local :model "nomic-embed-text"}}
+          :defaults #:assay{:model :smart
+                            :embedding-model :embeddings
+                            :max-tokens 512}})
 
 (deftest resolve-model
   (testing "nil designator uses the configured default alias"
     (let [{:keys [provider model]} (config/resolve-model test-config nil)]
       (is (= "acme-large" model))
-      (is (= :openai (:adapter provider)))
+      (is (= :openai (:assay/adapter provider)))
       (is (= :acme (config/provider-name provider)))))
 
   (testing "keyword designator resolves an alias"
@@ -60,17 +60,17 @@
   (testing "map designator is used directly"
     (is (= "whatever"
            (:model (config/resolve-model test-config
-                                         {:provider :local :model "whatever"})))))
+                                         #:assay{:provider :local :model "whatever"})))))
 
   (testing "embedding default key"
     (is (= "nomic-embed-text"
-           (:model (config/resolve-model test-config nil :embedding-model)))))
+           (:model (config/resolve-model test-config nil :assay/embedding-model)))))
 
   (testing "helpful errors"
     (is (thrown-with-msg? Exception #"No model alias"
                           (config/resolve-model test-config :nope)))
     (is (thrown-with-msg? Exception #"No provider named"
                           (config/resolve-model test-config
-                                                {:provider :nope :model "x"})))
+                                                #:assay{:provider :nope :model "x"})))
     (is (thrown-with-msg? Exception #"No model given"
                           (config/resolve-model {} nil)))))

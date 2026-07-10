@@ -1,11 +1,11 @@
-(ns kirahowe.clj-llm.providers.anthropic-test
+(ns assay.providers.anthropic-test
   (:require [clojure.test :refer [deftest is testing]]
-            [kirahowe.clj-llm.providers.anthropic :as anthropic]))
+            [assay.providers.anthropic :as anthropic]))
 
 (deftest build-request-basics
   (let [body (anthropic/build-request
-              {:model "claude-sonnet-4-6"
-               :messages [{:role :user :content "hi"}]})]
+              {:assay/model "claude-sonnet-4-6"
+               :assay/messages [{:role :user :content "hi"}]})]
     (is (= "claude-sonnet-4-6" (:model body)))
     (is (= anthropic/default-max-tokens (:max_tokens body)))
     (is (= [{:role "user" :content "hi"}] (:messages body)))
@@ -13,50 +13,57 @@
     (is (not (contains? body :stream)))))
 
 (deftest build-request-system-handling
-  (testing "explicit :system"
+  (testing "explicit :assay/system"
     (is (= "be brief"
            (:system (anthropic/build-request
-                     {:model "m" :system "be brief"
-                      :messages [{:role :user :content "hi"}]})))))
-  (testing ":system role messages are lifted out of :messages"
+                     {:assay/model "m" :assay/system "be brief"
+                      :assay/messages [{:role :user :content "hi"}]})))))
+  (testing ":system role messages are lifted out of :assay/messages"
     (let [body (anthropic/build-request
-                {:model "m"
-                 :messages [{:role :system :content "be brief"}
-                            {:role :user :content "hi"}]})]
+                {:assay/model "m"
+                 :assay/messages [{:role :system :content "be brief"}
+                                  {:role :user :content "hi"}]})]
       (is (= "be brief" (:system body)))
       (is (= [{:role "user" :content "hi"}] (:messages body))))))
 
 (deftest build-request-tools-and-options
   (let [body (anthropic/build-request
-              {:model "m"
-               :messages [{:role :user :content "hi"}]
-               :max-tokens 100
-               :temperature 0.5
-               :tools [{:name "get-weather"
-                        :description "weather lookup"
-                        :parameters {:type "object"}}]
-               :options {:top_k 5}})]
+              {:assay/model "m"
+               :assay/messages [{:role :user :content "hi"}]
+               :assay/max-tokens 100
+               :assay/temperature 0.5
+               :assay/tools [{:name "get-weather"
+                              :description "weather lookup"
+                              :parameters {:type "object"}}]
+               :assay/options {:top_k 5}})]
     (is (= 100 (:max_tokens body)))
     (is (= 0.5 (:temperature body)))
     (is (= [{:name "get-weather"
              :description "weather lookup"
              :input_schema {:type "object"}}]
            (:tools body)))
-    (is (= 5 (:top_k body)) ":options merge into the wire request")))
+    (is (= 5 (:top_k body)) ":assay/options merge into the wire request")))
+
+(deftest build-request-streaming
+  (let [body (anthropic/build-request
+              {:assay/model "m"
+               :assay/messages [{:role :user :content "hi"}]}
+              {:stream? true})]
+    (is (true? (:stream body)))))
 
 (deftest tool-conversation-wire-format
   (let [body (anthropic/build-request
-              {:model "m"
-               :messages [{:role :user :content "Weather in Berlin and Paris?"}
-                          {:role :assistant :content "Checking."
-                           :tool-calls [{:id "t1" :name "get-weather"
-                                         :arguments {:city "Berlin"}}
-                                        {:id "t2" :name "get-weather"
-                                         :arguments {:city "Paris"}}]}
-                          {:role :tool :tool-call-id "t1" :name "get-weather"
-                           :content "21C"}
-                          {:role :tool :tool-call-id "t2" :name "get-weather"
-                           :content "19C"}]})
+              {:assay/model "m"
+               :assay/messages [{:role :user :content "Weather in Berlin and Paris?"}
+                                {:role :assistant :content "Checking."
+                                 :tool-calls [{:id "t1" :name "get-weather"
+                                               :arguments {:city "Berlin"}}
+                                              {:id "t2" :name "get-weather"
+                                               :arguments {:city "Paris"}}]}
+                                {:role :tool :tool-call-id "t1" :name "get-weather"
+                                 :content "21C"}
+                                {:role :tool :tool-call-id "t2" :name "get-weather"
+                                 :content "19C"}]})
         [_ assistant results] (:messages body)]
     (testing "assistant tool calls become tool_use content blocks"
       (is (= "assistant" (:role assistant)))
@@ -119,12 +126,13 @@
                  :usage {:output_tokens 9}}
                 {:type "message_stop"}]
         chunks (atom [])
-        on-chunk #(swap! chunks conj (:text %))
+        on-chunk #(swap! chunks conj %)
         parsed (-> (reduce #(anthropic/reduce-event %1 %2 on-chunk)
                            anthropic/initial-stream-state
                            events)
                    anthropic/finalize-stream)]
-    (is (= ["Hel" "lo"] @chunks))
+    (is (= ["Hel" "lo"] (map :text @chunks)))
+    (is (every? #(= :text (:type %)) @chunks))
     (is (= "Hello" (get-in parsed [:message :content])))
     (is (= [{:id "toolu_1" :name "get-weather" :arguments {:city "Berlin"}}]
            (get-in parsed [:message :tool-calls])))
