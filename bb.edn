@@ -24,7 +24,7 @@
         :task (clojure "-M:book")}
 
   eval {:doc "Run an eval suite: bb eval [suite.edn [llm.edn [profile]]]"
-        :task (apply clojure "-M:dev" "-m" "assay.eval"
+        :task (apply clojure "-M:dev" "-m" "clj-llm.eval"
                      *command-line-args*)}
 
   ci {:doc "Run everything CI runs: format check, lint, tests"

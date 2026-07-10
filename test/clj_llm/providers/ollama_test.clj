@@ -1,13 +1,13 @@
-(ns assay.providers.ollama-test
+(ns clj-llm.providers.ollama-test
   (:require [clojure.test :refer [deftest is testing]]
-            [assay.providers.ollama :as ollama]))
+            [clj-llm.providers.ollama :as ollama]))
 
 (deftest build-request-basics
   (let [body (ollama/build-request
-              {:assay/model "llama3.2"
-               :assay/messages [{:role :user :content "hi"}]
-               :assay/max-tokens 64
-               :assay/temperature 0.1})]
+              {:clj-llm/model "llama3.2"
+               :clj-llm/messages [{:role :user :content "hi"}]
+               :clj-llm/max-tokens 64
+               :clj-llm/temperature 0.1})]
     (is (= "llama3.2" (:model body)))
     (is (= [{:role "user" :content "hi"}] (:messages body)))
     (is (false? (:stream body)) "non-streaming must be explicit for Ollama")
@@ -16,17 +16,17 @@
 
 (deftest build-request-streaming
   (let [body (ollama/build-request
-              {:assay/model "llama3.2"
-               :assay/messages [{:role :user :content "hi"}]}
+              {:clj-llm/model "llama3.2"
+               :clj-llm/messages [{:role :user :content "hi"}]}
               {:stream? true})]
     (is (true? (:stream body)))))
 
 (deftest build-request-system-and-tools
   (let [body (ollama/build-request
-              {:assay/model "m" :assay/system "be brief"
-               :assay/messages [{:role :user :content "hi"}]
-               :assay/tools [{:name "get-weather" :description "d"
-                              :parameters {:type "object"}}]})]
+              {:clj-llm/model "m" :clj-llm/system "be brief"
+               :clj-llm/messages [{:role :user :content "hi"}]
+               :clj-llm/tools [{:name "get-weather" :description "d"
+                                :parameters {:type "object"}}]})]
     (is (= {:role "system" :content "be brief"} (first (:messages body))))
     (is (= [{:type "function"
              :function {:name "get-weather" :description "d"
@@ -35,13 +35,13 @@
 
 (deftest tool-conversation-wire-format
   (let [body (ollama/build-request
-              {:assay/model "m"
-               :assay/messages [{:role :user :content "weather?"}
-                                {:role :assistant :content ""
-                                 :tool-calls [{:id "call_0" :name "get-weather"
-                                               :arguments {:city "Berlin"}}]}
-                                {:role :tool :tool-call-id "call_0"
-                                 :name "get-weather" :content "21C"}]})
+              {:clj-llm/model "m"
+               :clj-llm/messages [{:role :user :content "weather?"}
+                                  {:role :assistant :content ""
+                                   :tool-calls [{:id "call_0" :name "get-weather"
+                                                 :arguments {:city "Berlin"}}]}
+                                  {:role :tool :tool-call-id "call_0"
+                                   :name "get-weather" :content "21C"}]})
         [_ assistant result] (:messages body)]
     (testing "arguments stay a structured map (Ollama-native, not JSON string)"
       (is (= [{:function {:name "get-weather" :arguments {:city "Berlin"}}}]

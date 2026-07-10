@@ -1,8 +1,8 @@
-(ns assay.providers.anthropic
+(ns clj-llm.providers.anthropic
   "Adapter for the Anthropic Messages API (api.anthropic.com/v1/messages).
 
   Provider config keys (adapter-owned, unqualified by design):
-    :assay/adapter  :anthropic
+    :clj-llm/adapter  :anthropic
     :api-key        required — usually #env ANTHROPIC_API_KEY
     :base-url       optional, defaults to https://api.anthropic.com
     :version        optional anthropic-version header, defaults to 2023-06-01
@@ -10,8 +10,8 @@
     :timeout-ms     optional request timeout"
   (:require [charred.api :as json]
             [clojure.string :as str]
-            [assay.http :as http]
-            [assay.provider :as provider]))
+            [clj-llm.http :as http]
+            [clj-llm.provider :as provider]))
 
 (def default-max-tokens 4096)
 
@@ -63,7 +63,7 @@
 (defn build-request
   "Build the wire-format request body (a map ready to be sent as JSON)."
   ([request] (build-request request {}))
-  ([{:assay/keys [model messages system max-tokens temperature tools options]}
+  ([{:clj-llm/keys [model messages system max-tokens temperature tools options]}
     {:keys [stream?]}]
    (let [system (or system
                     (some #(when (= :system (:role %)) (:content %)) messages))]
@@ -151,7 +151,7 @@
     "error"
     (throw (ex-info (str "Anthropic stream error: "
                          (get-in event [:error :message]))
-                    {:type :assay/stream-error :event event}))
+                    {:type :clj-llm/stream-error :event event}))
 
     state))
 
@@ -180,11 +180,11 @@
 
 (defn- api-key! [provider-config]
   (or (:api-key provider-config)
-      (throw (ex-info (str "Provider " (or (:assay.config/name provider-config)
+      (throw (ex-info (str "Provider " (or (:clj-llm.config/name provider-config)
                                            ":anthropic")
                            " has no :api-key. Set it in your config file, e.g. "
                            ":api-key #env ANTHROPIC_API_KEY")
-                      {:type :assay/missing-api-key}))))
+                      {:type :clj-llm/missing-api-key}))))
 
 (defn- endpoint [provider-config]
   (str (or (:base-url provider-config) "https://api.anthropic.com")
@@ -196,7 +196,7 @@
          (:headers provider-config)))
 
 (defmethod provider/generate! :anthropic
-  [provider-config {:assay/keys [on-chunk] :as request} _opts]
+  [provider-config {:clj-llm/keys [on-chunk] :as request} _opts]
   (let [http-req {:url (endpoint provider-config)
                   :headers (headers provider-config)
                   :timeout-ms (:timeout-ms provider-config)
@@ -216,5 +216,5 @@
   [provider-config _request _opts]
   (throw (ex-info (str "Anthropic has no embeddings API. Configure an :openai "
                        "or :ollama provider for embeddings.")
-                  {:type :assay/unsupported
-                   :provider (:assay.config/name provider-config)})))
+                  {:type :clj-llm/unsupported
+                   :provider (:clj-llm.config/name provider-config)})))

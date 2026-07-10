@@ -1,4 +1,4 @@
-# The assay book
+# The clj-llm book
 
 The documentation book is a set of Clay notebooks: Markdown files for
 prose-only chapters and ordinary Clojure namespaces for everything with
@@ -25,7 +25,7 @@ Output lands in `docs/` (ready for GitHub Pages).
 
 | File                             | Content                                        |
 |----------------------------------|------------------------------------------------|
-| `index.md`                       | what assay is, installation                    |
+| `index.md`                       | what clj-llm is, installation                    |
 | `getting_started.clj`            | config, generate, the response map             |
 | `conversations_and_streaming.clj`| multi-turn, streaming                          |
 | `tools.clj`                      | function calling, manual tool handling         |

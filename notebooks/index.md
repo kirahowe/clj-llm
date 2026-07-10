@@ -1,24 +1,24 @@
-# assay
+# clj-llm
 
 A small, functional Clojure library for calling large language models — any model, from any provider, including local ones — with evals built in from the ground up.
 
-An *assay* is a test of quality and composition. The library is named for its premise: you can't build well with LLMs unless measuring what they do is as easy as calling them. Most LLM libraries treat evaluation as someone else's problem; here every response is already a replayable measurement record, and turning a folder of real interactions into a scored comparison of models, prompts, or whole pipelines is a one-liner.
+The premise: you can't build well with LLMs unless measuring what they do is as easy as calling them. Most LLM libraries treat evaluation as someone else's problem; here every response is already a replayable measurement record, and turning a folder of real interactions into a scored comparison of models, prompts, or whole pipelines is a one-liner.
 
 ## What it looks like
 
 ```clojure
-(require '[assay.core :as assay])
+(require '[clj-llm.core :as llm])
 
-(def config (assay/read-config "llm.edn"))
+(def config (llm/read-config "llm.edn"))
 
-(assay/generate config "Why is the sky blue?")
-;; => #:assay{:text "Sunlight scattering..." :usage {...} :latency-ms 640 ...}
+(llm/generate config "Why is the sky blue?")
+;; => #:clj-llm{:text "Sunlight scattering..." :usage {...} :latency-ms 640 ...}
 ```
 
-And the part that makes it *assay*:
+And the part the library is built around:
 
 ```clojure
-(require '[assay.eval :as eval])
+(require '[clj-llm.eval :as eval])
 
 (eval/print-summary (eval/run config "evals/suite.edn"))
 ;; variant    model              cases  errors  includes  latency(mean ms)  in-tok  out-tok
@@ -42,7 +42,7 @@ Not yet on Clojars. Use it as a git dependency:
 
 ```clojure
 ;; deps.edn
-{:deps {com.kirahowe/assay {:git/url "https://github.com/kirahowe/clj-llm"
+{:deps {com.kirahowe/clj-llm {:git/url "https://github.com/kirahowe/clj-llm"
                             :git/sha "..."}}}
 ```
 
@@ -50,8 +50,8 @@ Dependencies are deliberately light: [aero](https://github.com/juxt/aero), [char
 
 ## One rule before the examples
 
-Every key the library defines in maps you author or store — config, requests, responses, eval suites, reports — is namespaced `:assay/...`. Any other key in those maps is yours, forever. Conversation-shaped structures (messages, tool definitions, tool calls, usage, stream chunks, scores) keep their plain industry-standard keys (`:role`, `:content`, `:score`, ...), and *that* plain keyspace is reserved by the library. Clojure's namespaced-map literal keeps the qualified form light: `#:assay{:prompt "hi" :model :fast}`.
+Every key the library defines in maps you author or store — config, requests, responses, eval suites, reports — is namespaced `:clj-llm/...`. Any other key in those maps is yours, forever. Conversation-shaped structures (messages, tool definitions, tool calls, usage, stream chunks, scores) keep their plain industry-standard keys (`:role`, `:content`, `:score`, ...), and *that* plain keyspace is reserved by the library. Clojure's namespaced-map literal keeps the qualified form light: `#:clj-llm{:prompt "hi" :model :fast}`.
 
 ## How this book runs
 
-Every code example in the `.clj` chapters is evaluated when the book is rendered. To keep that deterministic and offline, the examples run against a canned in-process adapter (`book.demo`) whose config is shaped exactly like a real one — swap in `(assay/read-config "llm.edn")` and the same code talks to real providers.
+Every code example in the `.clj` chapters is evaluated when the book is rendered. To keep that deterministic and offline, the examples run against a canned in-process adapter (`book.demo`) whose config is shaped exactly like a real one — swap in `(llm/read-config "llm.edn")` and the same code talks to real providers.

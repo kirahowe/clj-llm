@@ -13,13 +13,13 @@
   ;; Run the test suite: clojure -M:test
   :test {:extra-paths ["test"]
          :extra-deps {org.clojure/tools.namespace {:mvn/version "1.5.1"}}
-         :main-opts ["-m" "assay.test-runner"]}
+         :main-opts ["-m" "clj-llm.test-runner"]}
 
   ;; Run tests with integrant on the classpath to exercise the optional bindings.
   :test-integrant {:extra-paths ["test"]
                    :extra-deps {org.clojure/tools.namespace {:mvn/version "1.5.1"}
                                 integrant/integrant {:mvn/version "0.13.1"}}
-                   :main-opts ["-m" "assay.test-runner"]}
+                   :main-opts ["-m" "clj-llm.test-runner"]}
 
   ;; Render the documentation book with Clay: clojure -M:book
   :book {:extra-paths ["notebooks"]

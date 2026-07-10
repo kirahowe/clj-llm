@@ -1,13 +1,13 @@
-(ns assay.providers.openai-test
+(ns clj-llm.providers.openai-test
   (:require [clojure.test :refer [deftest is testing]]
-            [assay.providers.openai :as openai]))
+            [clj-llm.providers.openai :as openai]))
 
 (deftest build-request-basics
   (let [body (openai/build-request
-              {:assay/model "gpt-4o-mini"
-               :assay/messages [{:role :user :content "hi"}]
-               :assay/max-tokens 128
-               :assay/temperature 0.3})]
+              {:clj-llm/model "gpt-4o-mini"
+               :clj-llm/messages [{:role :user :content "hi"}]
+               :clj-llm/max-tokens 128
+               :clj-llm/temperature 0.3})]
     (is (= "gpt-4o-mini" (:model body)))
     (is (= [{:role "user" :content "hi"}] (:messages body)))
     (is (= 128 (:max_completion_tokens body))
@@ -18,9 +18,9 @@
 
 (deftest build-request-legacy-max-tokens
   (let [body (openai/build-request
-              {:assay/model "gpt-4o-mini"
-               :assay/messages [{:role :user :content "hi"}]
-               :assay/max-tokens 128}
+              {:clj-llm/model "gpt-4o-mini"
+               :clj-llm/messages [{:role :user :content "hi"}]
+               :clj-llm/max-tokens 128}
               {:legacy-max-tokens? true})]
     (is (= 128 (:max_tokens body))
         ":legacy-max-tokens? true sends the older max_tokens field")
@@ -28,31 +28,31 @@
 
 (deftest build-request-system-prepended
   (let [body (openai/build-request
-              {:assay/model "m" :assay/system "be brief"
-               :assay/messages [{:role :user :content "hi"}]})]
+              {:clj-llm/model "m" :clj-llm/system "be brief"
+               :clj-llm/messages [{:role :user :content "hi"}]})]
     (is (= [{:role "system" :content "be brief"}
             {:role "user" :content "hi"}]
            (:messages body)))))
 
 (deftest build-request-streaming-asks-for-usage
   (let [body (openai/build-request
-              {:assay/model "m"
-               :assay/messages [{:role :user :content "hi"}]}
+              {:clj-llm/model "m"
+               :clj-llm/messages [{:role :user :content "hi"}]}
               {:stream? true})]
     (is (true? (:stream body)))
     (is (= {:include_usage true} (:stream_options body)))))
 
 (deftest tool-conversation-wire-format
   (let [body (openai/build-request
-              {:assay/model "m"
-               :assay/messages [{:role :user :content "weather?"}
-                                {:role :assistant :content nil
-                                 :tool-calls [{:id "call_1" :name "get-weather"
-                                               :arguments {:city "Berlin"}}]}
-                                {:role :tool :tool-call-id "call_1"
-                                 :name "get-weather" :content "21C"}]
-               :assay/tools [{:name "get-weather" :description "d"
-                              :parameters {:type "object"}}]})
+              {:clj-llm/model "m"
+               :clj-llm/messages [{:role :user :content "weather?"}
+                                  {:role :assistant :content nil
+                                   :tool-calls [{:id "call_1" :name "get-weather"
+                                                 :arguments {:city "Berlin"}}]}
+                                  {:role :tool :tool-call-id "call_1"
+                                   :name "get-weather" :content "21C"}]
+               :clj-llm/tools [{:name "get-weather" :description "d"
+                                :parameters {:type "object"}}]})
         [_ assistant result] (:messages body)]
     (is (= [{:type "function"
              :function {:name "get-weather" :description "d"

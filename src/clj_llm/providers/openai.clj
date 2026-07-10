@@ -1,4 +1,4 @@
-(ns assay.providers.openai
+(ns clj-llm.providers.openai
   "Adapter for the OpenAI chat-completions protocol. Because the protocol
   is a de-facto standard, this one adapter covers OpenAI itself plus
   OpenRouter, Groq, Together, Mistral's La Plateforme, vLLM, LM Studio,
@@ -6,7 +6,7 @@
   point :base-url at the service.
 
   Provider config keys (adapter-owned, unqualified by design):
-    :assay/adapter       :openai
+    :clj-llm/adapter       :openai
     :api-key             usually required — e.g. #env OPENAI_API_KEY;
                          may be omitted for local servers that don't check auth
     :base-url            optional, defaults to https://api.openai.com/v1
@@ -17,8 +17,8 @@
                          by default — set true for older OpenAI-compatible
                          servers that only understand max_tokens"
   (:require [charred.api :as json]
-            [assay.http :as http]
-            [assay.provider :as provider]))
+            [clj-llm.http :as http]
+            [clj-llm.provider :as provider]))
 
 ;; ---------------------------------------------------------------------------
 ;; Request building
@@ -48,7 +48,7 @@
 (defn build-request
   "Build the wire-format request body (a map ready to be sent as JSON)."
   ([request] (build-request request {}))
-  ([{:assay/keys [model messages system max-tokens temperature tools options]}
+  ([{:clj-llm/keys [model messages system max-tokens temperature tools options]}
     {:keys [stream? legacy-max-tokens?]}]
    (let [messages (if (and system (not-any? #(= :system (:role %)) messages))
                     (into [{:role :system :content system}] messages)
@@ -161,7 +161,7 @@
          (:headers provider-config)))
 
 (defmethod provider/generate! :openai
-  [provider-config {:assay/keys [on-chunk] :as request} _opts]
+  [provider-config {:clj-llm/keys [on-chunk] :as request} _opts]
   (let [http-req {:url (str (base-url provider-config) "/chat/completions")
                   :headers (headers provider-config)
                   :timeout-ms (:timeout-ms provider-config)
@@ -181,7 +181,7 @@
       (-> (http/post-json http-req) :body parse-response))))
 
 (defmethod provider/embed! :openai
-  [provider-config {:assay/keys [model input options]} _opts]
+  [provider-config {:clj-llm/keys [model input options]} _opts]
   (let [{:keys [body]} (http/post-json
                         {:url (str (base-url provider-config) "/embeddings")
                          :headers (headers provider-config)

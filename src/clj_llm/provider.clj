@@ -1,7 +1,7 @@
-(ns assay.provider
+(ns clj-llm.provider
   "The adapter boundary. An adapter is a set of multimethod
-  implementations dispatching on the :assay/adapter key of a provider
-  config map. assay ships adapters for :anthropic, :openai (anything
+  implementations dispatching on the :clj-llm/adapter key of a provider
+  config map. clj-llm ships adapters for :anthropic, :openai (anything
   speaking the OpenAI chat-completions protocol) and :ollama; add your
   own by requiring this namespace and implementing `generate!` (and
   optionally `embed!`, `start`, `stop`) for your own dispatch keyword.
@@ -12,10 +12,10 @@
   cross-cutting concerns like cancellation or telemetry. Adapters should
   accept it and may ignore it.
 
-  `generate!` receives a normalized request whose assay-owned keys are
+  `generate!` receives a normalized request whose clj-llm-owned keys are
   namespaced:
 
-    #:assay{:model       \"model-id\"          string, already resolved
+    #:clj-llm{:model       \"model-id\"          string, already resolved
             :messages    [{:role :user :content \"...\"} ...]
             :system      \"...\"               optional system prompt
             :max-tokens  4096                  optional
@@ -28,7 +28,7 @@
                                                merged into the wire request
 
   Messages, tools, tool calls and usage are plain-keyed protocol
-  structures (see assay.spec). Message roles are :system, :user,
+  structures (see clj-llm.spec). Message roles are :system, :user,
   :assistant and :tool. An assistant message may carry :tool-calls
   [{:id :name :arguments}], and a :tool message carries :tool-call-id,
   :name and :content (the tool's result). Message :content is a string
@@ -46,7 +46,7 @@
 
   ## Compatibility contract
 
-  These are the rules assay commits to so that adapters written today
+  These are the rules clj-llm commits to so that adapters written today
   keep working with every future version:
 
   - New request keys are additive; adapters may ignore keys they don't
@@ -67,22 +67,22 @@
 
   - Unqualified keys in provider config maps other than those read by
     the adapter itself will never gain library-level meaning; only
-    :assay/-qualified keys are assay's.")
+    :clj-llm/-qualified keys are clj-llm's.")
 
 (defn- dispatch [provider-config & _]
-  (:assay/adapter provider-config))
+  (:clj-llm/adapter provider-config))
 
 (defmulti generate!
   "Execute one text-generation request against a provider:
   (generate! provider-config request opts). Dispatches on the provider
-  config's :assay/adapter. See the namespace docstring for the
-  request/result contract. Most callers want assay.core/generate, which
+  config's :clj-llm/adapter. See the namespace docstring for the
+  request/result contract. Most callers want clj-llm.core/generate, which
   resolves config, applies defaults and runs the tool loop."
   dispatch)
 
 (defmulti embed!
   "Compute embeddings: (embed! provider-config request opts). Request:
-  #:assay{:model \"...\" :input [\"text\" ...] :options {...}}. Returns
+  #:clj-llm{:model \"...\" :input [\"text\" ...] :options {...}}. Returns
   {:embeddings [[floats] ...] :model ... :usage ... :raw ...}."
   dispatch)
 
@@ -103,11 +103,11 @@
 
 (defn- unknown-adapter! [provider-config op]
   (throw (ex-info (str "No " op " implementation for adapter "
-                       (pr-str (:assay/adapter provider-config))
+                       (pr-str (:clj-llm/adapter provider-config))
                        ". Built-in adapters (:anthropic, :openai, :ollama) are "
-                       "loaded by requiring assay.core.")
-                  {:type :assay/unknown-adapter
-                   :adapter (:assay/adapter provider-config)
+                       "loaded by requiring clj-llm.core.")
+                  {:type :clj-llm/unknown-adapter
+                   :adapter (:clj-llm/adapter provider-config)
                    :op op})))
 
 (defmethod generate! :default [provider-config _request _opts]

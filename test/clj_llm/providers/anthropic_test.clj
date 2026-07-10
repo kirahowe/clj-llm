@@ -1,11 +1,11 @@
-(ns assay.providers.anthropic-test
+(ns clj-llm.providers.anthropic-test
   (:require [clojure.test :refer [deftest is testing]]
-            [assay.providers.anthropic :as anthropic]))
+            [clj-llm.providers.anthropic :as anthropic]))
 
 (deftest build-request-basics
   (let [body (anthropic/build-request
-              {:assay/model "claude-sonnet-4-6"
-               :assay/messages [{:role :user :content "hi"}]})]
+              {:clj-llm/model "claude-sonnet-4-6"
+               :clj-llm/messages [{:role :user :content "hi"}]})]
     (is (= "claude-sonnet-4-6" (:model body)))
     (is (= anthropic/default-max-tokens (:max_tokens body)))
     (is (= [{:role "user" :content "hi"}] (:messages body)))
@@ -13,57 +13,57 @@
     (is (not (contains? body :stream)))))
 
 (deftest build-request-system-handling
-  (testing "explicit :assay/system"
+  (testing "explicit :clj-llm/system"
     (is (= "be brief"
            (:system (anthropic/build-request
-                     {:assay/model "m" :assay/system "be brief"
-                      :assay/messages [{:role :user :content "hi"}]})))))
-  (testing ":system role messages are lifted out of :assay/messages"
+                     {:clj-llm/model "m" :clj-llm/system "be brief"
+                      :clj-llm/messages [{:role :user :content "hi"}]})))))
+  (testing ":system role messages are lifted out of :clj-llm/messages"
     (let [body (anthropic/build-request
-                {:assay/model "m"
-                 :assay/messages [{:role :system :content "be brief"}
-                                  {:role :user :content "hi"}]})]
+                {:clj-llm/model "m"
+                 :clj-llm/messages [{:role :system :content "be brief"}
+                                    {:role :user :content "hi"}]})]
       (is (= "be brief" (:system body)))
       (is (= [{:role "user" :content "hi"}] (:messages body))))))
 
 (deftest build-request-tools-and-options
   (let [body (anthropic/build-request
-              {:assay/model "m"
-               :assay/messages [{:role :user :content "hi"}]
-               :assay/max-tokens 100
-               :assay/temperature 0.5
-               :assay/tools [{:name "get-weather"
-                              :description "weather lookup"
-                              :parameters {:type "object"}}]
-               :assay/options {:top_k 5}})]
+              {:clj-llm/model "m"
+               :clj-llm/messages [{:role :user :content "hi"}]
+               :clj-llm/max-tokens 100
+               :clj-llm/temperature 0.5
+               :clj-llm/tools [{:name "get-weather"
+                                :description "weather lookup"
+                                :parameters {:type "object"}}]
+               :clj-llm/options {:top_k 5}})]
     (is (= 100 (:max_tokens body)))
     (is (= 0.5 (:temperature body)))
     (is (= [{:name "get-weather"
              :description "weather lookup"
              :input_schema {:type "object"}}]
            (:tools body)))
-    (is (= 5 (:top_k body)) ":assay/options merge into the wire request")))
+    (is (= 5 (:top_k body)) ":clj-llm/options merge into the wire request")))
 
 (deftest build-request-streaming
   (let [body (anthropic/build-request
-              {:assay/model "m"
-               :assay/messages [{:role :user :content "hi"}]}
+              {:clj-llm/model "m"
+               :clj-llm/messages [{:role :user :content "hi"}]}
               {:stream? true})]
     (is (true? (:stream body)))))
 
 (deftest tool-conversation-wire-format
   (let [body (anthropic/build-request
-              {:assay/model "m"
-               :assay/messages [{:role :user :content "Weather in Berlin and Paris?"}
-                                {:role :assistant :content "Checking."
-                                 :tool-calls [{:id "t1" :name "get-weather"
-                                               :arguments {:city "Berlin"}}
-                                              {:id "t2" :name "get-weather"
-                                               :arguments {:city "Paris"}}]}
-                                {:role :tool :tool-call-id "t1" :name "get-weather"
-                                 :content "21C"}
-                                {:role :tool :tool-call-id "t2" :name "get-weather"
-                                 :content "19C"}]})
+              {:clj-llm/model "m"
+               :clj-llm/messages [{:role :user :content "Weather in Berlin and Paris?"}
+                                  {:role :assistant :content "Checking."
+                                   :tool-calls [{:id "t1" :name "get-weather"
+                                                 :arguments {:city "Berlin"}}
+                                                {:id "t2" :name "get-weather"
+                                                 :arguments {:city "Paris"}}]}
+                                  {:role :tool :tool-call-id "t1" :name "get-weather"
+                                   :content "21C"}
+                                  {:role :tool :tool-call-id "t2" :name "get-weather"
+                                   :content "19C"}]})
         [_ assistant results] (:messages body)]
     (testing "assistant tool calls become tool_use content blocks"
       (is (= "assistant" (:role assistant)))

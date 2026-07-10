@@ -1,9 +1,8 @@
-# assay
+# clj-llm
 
 A small, functional Clojure library for calling large language models —
 any model, from any provider, including local ones — with evals built in
-from the ground up. An *assay* is a test of quality and composition:
-this library's premise is that you can't build well with LLMs unless
+from the ground up. The premise: you can't build well with LLMs unless
 measuring what they do is as easy as calling them.
 
 Inspired by [RubyLLM](https://rubyllm.com), rebuilt on Clojure values:
@@ -18,11 +17,11 @@ Inspired by [RubyLLM](https://rubyllm.com), rebuilt on Clojure values:
   source code.
 - **Evals are first class.** You can't pick "the best" model or prompt
   without measuring. Every response is a complete, replayable
-  interaction record, and `assay.eval` runs cases × variants into
+  interaction record, and `clj-llm.eval` runs cases × variants into
   scored, comparable summaries — for single calls or for whole systems
   that contain LLM calls.
 - **Conversations are data.** A conversation is a vector of message
-  maps. Multi-turn just means passing the previous `:assay/messages`
+  maps. Multi-turn just means passing the previous `:clj-llm/messages`
   back in — no chat-object ceremony, and a zero-shot question isn't
   pretending to be a chat.
 - **One protocol away from any provider.** Adapters are multimethods;
@@ -45,8 +44,8 @@ Not yet on Clojars. Use it as a git dependency:
 
 ```clojure
 ;; deps.edn
-{:deps {com.kirahowe/assay {:git/url "https://github.com/kirahowe/clj-llm"
-                            :git/sha "..."}}}
+{:deps {com.kirahowe/clj-llm {:git/url "https://github.com/kirahowe/clj-llm"
+                              :git/sha "..."}}}
 ```
 
 ## The keyspace rule
@@ -55,7 +54,7 @@ One rule to know before reading any example, and the reason this library
 can promise not to break you:
 
 - Every key the library defines in maps you author or store — config,
-  requests, responses, eval suites, reports — is namespaced `:assay/...`.
+  requests, responses, eval suites, reports — is namespaced `:clj-llm/...`.
   Any *other* key in those maps (unqualified, or namespaced by you) is
   yours: the library will never assign meaning to it.
 - Conversation-shaped structures — messages, tool definitions, tool
@@ -65,53 +64,53 @@ can promise not to break you:
   library; extend them only with your own namespaced keys.
 
 Clojure's namespaced-map literal keeps the qualified form light:
-`#:assay{:prompt "hi" :model :fast}` reads as
-`{:assay/prompt "hi" :assay/model :fast}`.
+`#:clj-llm{:prompt "hi" :model :fast}` reads as
+`{:clj-llm/prompt "hi" :clj-llm/model :fast}`.
 
 ## Configuration
 
 Create an EDN config file (conventionally `llm.edn`). It's read with
 aero, so the full aero tag set is available — `#env`, `#or`, `#profile`,
 `#include`, `#ref`, ... A full example ships at
-[`resources/assay/config.example.edn`](resources/assay/config.example.edn):
+[`resources/clj-llm/config.example.edn`](resources/clj-llm/config.example.edn):
 
 ```clojure
-#:assay{:providers
-        {:anthropic {:assay/adapter :anthropic
-                     :api-key #env ANTHROPIC_API_KEY}
+#:clj-llm{:providers
+          {:anthropic {:clj-llm/adapter :anthropic
+                       :api-key #env ANTHROPIC_API_KEY}
 
-         ;; the :openai adapter speaks the OpenAI chat-completions protocol,
-         ;; so it covers OpenAI, OpenRouter, Groq, Together, vLLM, LM Studio...
-         :groq {:assay/adapter :openai
-                :base-url "https://api.groq.com/openai/v1"
-                :api-key #env GROQ_API_KEY}
+           ;; the :openai adapter speaks the OpenAI chat-completions protocol,
+           ;; so it covers OpenAI, OpenRouter, Groq, Together, vLLM, LM Studio...
+           :groq {:clj-llm/adapter :openai
+                  :base-url "https://api.groq.com/openai/v1"
+                  :api-key #env GROQ_API_KEY}
 
-         ;; local models through Ollama's native API
-         :local {:assay/adapter :ollama
-                 :base-url #or [#env OLLAMA_HOST "http://localhost:11434"]}}
+           ;; local models through Ollama's native API
+           :local {:clj-llm/adapter :ollama
+                   :base-url #or [#env OLLAMA_HOST "http://localhost:11434"]}}
 
-        ;; aliases: code names an intent (:smart, :fast); config decides what
-        ;; that means. Swap providers without touching code.
-        :models
-        {:smart #:assay{:provider :anthropic :model "claude-sonnet-4-6"}
-         :fast  #:assay{:provider :groq :model "llama-3.3-70b-versatile"}}
+          ;; aliases: code names an intent (:smart, :fast); config decides what
+          ;; that means. Swap providers without touching code.
+          :models
+          {:smart #:clj-llm{:provider :anthropic :model "claude-sonnet-4-6"}
+           :fast  #:clj-llm{:provider :groq :model "llama-3.3-70b-versatile"}}
 
-        :defaults
-        #:assay{:model :smart
-                :max-tokens #profile {:dev 1024 :default 4096}}}
+          :defaults
+          #:clj-llm{:model :smart
+                    :max-tokens #profile {:dev 1024 :default 4096}}}
 ```
 
-Within a provider map, `:assay/adapter` selects the wire protocol; every
+Within a provider map, `:clj-llm/adapter` selects the wire protocol; every
 other key (`:api-key`, `:base-url`, ...) belongs to that adapter and
 flows through untouched — including to your own custom adapters.
 
 Load it with:
 
 ```clojure
-(require '[assay.core :as assay])
+(require '[clj-llm.core :as llm])
 
-(def config (assay/read-config "llm.edn"))                  ; or any io/reader-able source
-(def config (assay/read-config "llm.edn" {:profile :dev}))  ; aero options pass through
+(def config (llm/read-config "llm.edn"))                  ; or any io/reader-able source
+(def config (llm/read-config "llm.edn" {:profile :dev}))  ; aero options pass through
 ```
 
 The result is a plain map — configs built by hand, by aero directly, or
@@ -123,24 +122,24 @@ inside an integrant system all work identically downstream.
 
 ```clojure
 ;; zero-shot: a prompt in, a response map out
-(assay/generate config "Why is the sky blue?")
-;; => #:assay{:text "Sunlight scattering..."
-;;            :messages [{:role :user :content "Why is the sky blue?"}
-;;                       {:role :assistant :content "Sunlight scattering..."}]
-;;            :model "claude-sonnet-4-6"
-;;            :provider :anthropic
-;;            :usage {:input-tokens 13 :output-tokens 42}
-;;            :finish-reason :stop
-;;            :request {...} :latency-ms 640 :started-at #inst "..." :op :generate
-;;            :raw {...}}
+(llm/generate config "Why is the sky blue?")
+;; => #:clj-llm{:text "Sunlight scattering..."
+;;              :messages [{:role :user :content "Why is the sky blue?"}
+;;                         {:role :assistant :content "Sunlight scattering..."}]
+;;              :model "claude-sonnet-4-6"
+;;              :provider :anthropic
+;;              :usage {:input-tokens 13 :output-tokens 42}
+;;              :finish-reason :stop
+;;              :request {...} :latency-ms 640 :started-at #inst "..." :op :generate
+;;              :raw {...}}
 
 ;; pick a model per call — by alias, "provider/model" string, or map
-(assay/generate config "Say hi." {:assay/model :fast})
-(assay/generate config "Say hi." {:assay/model "local/llama3.2"})
-(assay/generate config "Say hi." {:assay/model #:assay{:provider :groq :model "qwen-2.5-72b"}})
+(llm/generate config "Say hi." {:clj-llm/model :fast})
+(llm/generate config "Say hi." {:clj-llm/model "local/llama3.2"})
+(llm/generate config "Say hi." {:clj-llm/model #:clj-llm{:provider :groq :model "qwen-2.5-72b"}})
 
 ;; everything else is a request key
-(assay/generate config #:assay{:system "You are terse."
+(llm/generate config #:clj-llm{:system "You are terse."
                                :prompt "Explain monads."
                                :max-tokens 200
                                :temperature 0.2})
@@ -148,25 +147,25 @@ inside an integrant system all work identically downstream.
 
 ### Multi-turn conversations
 
-A conversation is the `:assay/messages` vector. Continue one by conj-ing
+A conversation is the `:clj-llm/messages` vector. Continue one by conj-ing
 the next user message onto the previous response's messages:
 
 ```clojure
-(def r1 (assay/generate config "Name a prime number between 100 and 200."))
+(def r1 (llm/generate config "Name a prime number between 100 and 200."))
 
-(assay/generate config
-                {:assay/messages (conj (:assay/messages r1)
+(llm/generate config
+              {:clj-llm/messages (conj (:clj-llm/messages r1)
                                        {:role :user :content "Why is it prime?"})})
 ```
 
 Store that vector wherever your context keeps state — a Ring session, an
 atom, a database row. The library doesn't care. Message maps are part of
-the frozen contract (see `assay.spec`), so conversations you persist
+the frozen contract (see `clj-llm.spec`), so conversations you persist
 today stay readable by every future version.
 
 ### Streaming
 
-Pass an `:assay/on-chunk` callback. Each chunk has a `:type`; text
+Pass an `:clj-llm/on-chunk` callback. Each chunk has a `:type`; text
 deltas are `{:type :text :text "delta"}`. New chunk types may appear in
 future versions (tool-call deltas, thinking, round boundaries), so
 **ignore chunks whose type you don't recognize** — that's what keeps
@@ -174,21 +173,21 @@ your callback forward-compatible. The complete response map is still
 returned at the end.
 
 ```clojure
-(assay/generate config "Tell me a story."
-                {:assay/on-chunk (fn [{:keys [type text]}]
+(llm/generate config "Tell me a story."
+              {:clj-llm/on-chunk (fn [{:keys [type text]}]
                                    (when (= :text type)
                                      (print text) (flush)))})
 ```
 
 ### Tools (function calling)
 
-Tools are maps. If every tool the model calls has a `:fn`, assay runs
+Tools are maps. If every tool the model calls has a `:fn`, clj-llm runs
 the call, feeds the result back, and loops (bounded by
-`:assay/max-tool-rounds`, default 10) until the model answers:
+`:clj-llm/max-tool-rounds`, default 10) until the model answers:
 
 ```clojure
-(assay/generate config "What's the weather in Berlin?"
-                {:assay/tools [{:name "get-weather"
+(llm/generate config "What's the weather in Berlin?"
+              {:clj-llm/tools [{:name "get-weather"
                                 :description "Look up current weather for a city"
                                 :parameters {:type "object"
                                              :properties {:city {:type "string"}}
@@ -202,7 +201,7 @@ the call, feeds the result back, and loops (bounded by
 Exceptions are caught and reported back to the model as tool errors.
 
 Omit `:fn` and the loop stays out of your way: the response comes back
-with `:assay/tool-calls` and `:assay/finish-reason :tool-calls`, and you
+with `:clj-llm/tool-calls` and `:clj-llm/finish-reason :tool-calls`, and you
 append `{:role :tool :tool-call-id id :content result}` messages
 yourself — useful when tool execution needs approval, queueing, or your
 own loop.
@@ -210,12 +209,12 @@ own loop.
 ### Embeddings
 
 ```clojure
-(assay/embed config "some text")            ; => #:assay{:embedding [0.01 ...] ...}
-(assay/embed config ["chunk 1" "chunk 2"])  ; => #:assay{:embeddings [[...] [...]] ...}
+(llm/embed config "some text")            ; => #:clj-llm{:embedding [0.01 ...] ...}
+(llm/embed config ["chunk 1" "chunk 2"])  ; => #:clj-llm{:embeddings [[...] [...]] ...}
 ```
 
-Uses the `:assay/embedding-model` alias from `:assay/defaults`; override
-per call with `{:assay/model ...}`.
+Uses the `:clj-llm/embedding-model` alias from `:clj-llm/defaults`; override
+per call with `{:clj-llm/model ...}`.
 
 ## Evals
 
@@ -225,18 +224,18 @@ measuring, so evals are part of the core design, in two layers.
 ### 1. Every call collects what evals need
 
 Every `generate`/`embed` response doubles as an **interaction record**:
-alongside the result it carries the fully resolved `:assay/request`
-(replayable — tool functions scrubbed), `:assay/usage`,
-`:assay/latency-ms`, `:assay/started-at` and `:assay/op`. To collect
+alongside the result it carries the fully resolved `:clj-llm/request`
+(replayable — tool functions scrubbed), `:clj-llm/usage`,
+`:clj-llm/latency-ms`, `:clj-llm/started-at` and `:clj-llm/op`. To collect
 records from live traffic, set a hook once in config:
 
 ```clojure
-#:assay{:defaults #:assay{:model :smart
-                          :on-interaction my.app/store-interaction!}}  ; fn of one record
+#:clj-llm{:defaults #:clj-llm{:model :smart
+                              :on-interaction my.app/store-interaction!}}  ; fn of one record
 ```
 
 Collected records replay directly as eval cases, since a case accepts
-the same `:assay/messages` a record carries.
+the same `:clj-llm/messages` a record carries.
 
 ### 2. Suites: cases × variants → scored comparison
 
@@ -247,20 +246,20 @@ tools...), scorers say *what good looks like*:
 
 ```clojure
 ;; evals/suite.edn
-#:assay{:cases    [#:assay{:id :capital
-                           :input "What is the capital of France?"
-                           :expected "Paris"}]
-        :variants [#:assay{:id :baseline :model :smart}
-                   #:assay{:id :cheap    :model :fast}
-                   #:assay{:id :terse    :model :smart :system "Answer in one word."}]
-        :scorers  [:includes]
-        ;; optional: minimum mean score per scorer — the CLI exits
-        ;; non-zero below this, so a suite can gate CI like a test suite
-        :thresholds {:includes 0.9}}
+#:clj-llm{:cases    [#:clj-llm{:id :capital
+                               :input "What is the capital of France?"
+                               :expected "Paris"}]
+          :variants [#:clj-llm{:id :baseline :model :smart}
+                     #:clj-llm{:id :cheap    :model :fast}
+                     #:clj-llm{:id :terse    :model :smart :system "Answer in one word."}]
+          :scorers  [:includes]
+          ;; optional: minimum mean score per scorer — the CLI exits
+          ;; non-zero below this, so a suite can gate CI like a test suite
+          :thresholds {:includes 0.9}}
 ```
 
 ```clojure
-(require '[assay.eval :as eval])
+(require '[clj-llm.eval :as eval])
 
 (def report (eval/run config "evals/suite.edn"))
 
@@ -273,7 +272,7 @@ tools...), scorers say *what good looks like*:
 ```
 
 The report is data — per case×variant results with full responses, a
-per-variant summary, and provenance (`:assay/run-at`, resolved model
+per-variant summary, and provenance (`:clj-llm/run-at`, resolved model
 ids, case/variant counts) so a stored report is comparable with next
 month's. From the shell: `bb eval evals/suite.edn`.
 
@@ -288,35 +287,35 @@ one call away:
 
 ```clojure
 (eval/run config
-          #:assay{:cases cases
-                  :variants variants
-                  :scorers [:includes
-                            (eval/llm-judge {:model :smart
-                                             :criteria "Factually accurate, and answers the question directly."})]})
+          #:clj-llm{:cases cases
+                    :variants variants
+                    :scorers [:includes
+                              (eval/llm-judge {:model :smart
+                                               :criteria "Factually accurate, and answers the question directly."})]})
 ```
 
 ### Evals for whole systems, not just calls
 
 By default a case×variant runs one `generate` call. Real questions are
 usually bigger: is my *pipeline* — retrieval, prompt assembly, the
-model, post-processing — good? Point `:assay/task` at any function of
+model, post-processing — good? Point `:clj-llm/task` at any function of
 `{:keys [config case variant]}` that returns a response-shaped map and
 the same cases, scorers, thresholds and reports apply to your whole
 system:
 
 ```clojure
 (eval/run config
-          #:assay{:cases cases
-                  :task (fn [{:keys [config case]}]
-                          (my.rag/answer config (:assay/input case)))  ; returns the generate response
-                  :scorers [(eval/llm-judge {:criteria "Grounded in the retrieved context."})]})
+          #:clj-llm{:cases cases
+                    :task (fn [{:keys [config case]}]
+                            (my.rag/answer config (:clj-llm/input case)))  ; returns the generate response
+                    :scorers [(eval/llm-judge {:criteria "Grounded in the retrieved context."})]})
 ```
 
-In EDN suites, `:assay/task` can be a qualified symbol too.
+In EDN suites, `:clj-llm/task` can be a qualified symbol too.
 
 The intended workflow: start with the defaults (copy
-[`resources/assay/eval-suite.example.edn`](resources/assay/eval-suite.example.edn)),
-grow cases from real traffic via `:assay/on-interaction`, set thresholds
+[`resources/clj-llm/eval-suite.example.edn`](resources/clj-llm/eval-suite.example.edn)),
+grow cases from real traffic via `:clj-llm/on-interaction`, set thresholds
 so quality regressions fail CI, and let every model/prompt/pipeline
 change be a benchmarked decision instead of a vibe.
 
@@ -325,10 +324,10 @@ change be a benchmarked decision instead of a vibe.
 ### Adding a provider adapter
 
 An adapter is a couple of multimethod implementations, dispatching on
-the `:assay/adapter` key of a provider config:
+the `:clj-llm/adapter` key of a provider config:
 
 ```clojure
-(require '[assay.provider :as provider])
+(require '[clj-llm.provider :as provider])
 
 (defmethod provider/generate! :my-adapter
   [provider-config request opts]
@@ -337,80 +336,80 @@ the `:assay/adapter` key of a provider config:
   ...)
 ```
 
-See the `assay.provider` docstring for the full contract **and the
+See the `clj-llm.provider` docstring for the full contract **and the
 compatibility rules the library commits to** (new request keys are
 ignorable, new result keys optional, multimethod signatures frozen —
 anything new arrives inside the `request` or `opts` maps). The
-`assay.providers.ollama` source is a compact reference implementation.
+`clj-llm.providers.ollama` source is a compact reference implementation.
 
 ### Integrant
 
 The library is stateless, so it doesn't *need* lifecycle management —
 but if your app is an integrant system, add `integrant/integrant` to
-your deps and require `assay.integrant` for a ready-made key that loads
+your deps and require `clj-llm.integrant` for a ready-made key that loads
 the config file (aero options like `:profile` pass through):
 
 ```clojure
 ;; system.edn
-{:assay/config {:path "llm.edn" :profile :prod}
- :my-app/handler {:llm #ig/ref :assay/config}}
+{:clj-llm/config {:path "llm.edn" :profile :prod}
+ :my-app/handler {:llm #ig/ref :clj-llm/config}}
 ```
 
 ```clojure
 (defmethod ig/init-key :my-app/handler [_ {:keys [llm]}]
   (fn [request]
     ...
-    (assay/generate llm (:question (:params request)))))
+    (llm/generate llm (:question (:params request)))))
 ```
 
 Init/halt also run each provider's `start`/`stop` multimethod hooks
 (no-ops for the built-in adapters) — the escape hatch if a future
 adapter ever needs real state like OAuth token refresh. Integrant is
-deliberately **not** a dependency of assay; plain-map users never load
+deliberately **not** a dependency of clj-llm; plain-map users never load
 it.
 
 ## Response reference
 
-`generate` returns (all under the `:assay/` namespace):
+`generate` returns (all under the `:clj-llm/` namespace):
 
 | Key                    | Value                                                        |
 |------------------------|--------------------------------------------------------------|
-| `:assay/text`          | the assistant's reply text                                   |
-| `:assay/messages`      | full conversation incl. the reply and any tool rounds        |
-| `:assay/tool-calls`    | unhandled tool calls (only when you left `:fn` off)          |
-| `:assay/model`         | model id as reported by the provider                         |
-| `:assay/provider`      | provider name keyword from your config                       |
-| `:assay/usage`         | `{:input-tokens n :output-tokens n}`, summed over tool rounds|
-| `:assay/finish-reason` | `:stop`, `:length`, `:tool-calls`, `:refusal`, ... (open set)|
-| `:assay/request`       | the fully resolved, replayable request                       |
-| `:assay/latency-ms`    | wall-clock duration of the call                              |
-| `:assay/started-at`    | `java.time.Instant` the call began                           |
-| `:assay/op`            | `:generate` (or `:embed`)                                    |
-| `:assay/raw`           | the provider's parsed wire response (last round)             |
+| `:clj-llm/text`          | the assistant's reply text                                   |
+| `:clj-llm/messages`      | full conversation incl. the reply and any tool rounds        |
+| `:clj-llm/tool-calls`    | unhandled tool calls (only when you left `:fn` off)          |
+| `:clj-llm/model`         | model id as reported by the provider                         |
+| `:clj-llm/provider`      | provider name keyword from your config                       |
+| `:clj-llm/usage`         | `{:input-tokens n :output-tokens n}`, summed over tool rounds|
+| `:clj-llm/finish-reason` | `:stop`, `:length`, `:tool-calls`, `:refusal`, ... (open set)|
+| `:clj-llm/request`       | the fully resolved, replayable request                       |
+| `:clj-llm/latency-ms`    | wall-clock duration of the call                              |
+| `:clj-llm/started-at`    | `java.time.Instant` the call began                           |
+| `:clj-llm/op`            | `:generate` (or `:embed`)                                    |
+| `:clj-llm/raw`           | the provider's parsed wire response (last round)             |
 
-All contracts are also expressed as malli schemas in `assay.spec` —
+All contracts are also expressed as malli schemas in `clj-llm.spec` —
 that namespace is the precise, machine-checkable version of this table.
 
 Errors throw `ex-info`; the ex-data `:type` values are part of the
-stable API: `:assay/http-error` (with `:status` and `:body`),
-`:assay/invalid-request`, `:assay/invalid-config`, `:assay/config-error`,
-`:assay/unknown-adapter`, `:assay/missing-api-key`, `:assay/unsupported`,
-`:assay/stream-error`, `:assay/invalid-suite`, `:assay/unknown-scorer`,
-`:assay/invalid-case`, `:assay/config-not-found`.
+stable API: `:clj-llm/http-error` (with `:status` and `:body`),
+`:clj-llm/invalid-request`, `:clj-llm/invalid-config`, `:clj-llm/config-error`,
+`:clj-llm/unknown-adapter`, `:clj-llm/missing-api-key`, `:clj-llm/unsupported`,
+`:clj-llm/stream-error`, `:clj-llm/invalid-suite`, `:clj-llm/unknown-scorer`,
+`:clj-llm/invalid-case`, `:clj-llm/config-not-found`.
 
 ## Compatibility promises
 
 These are commitments, not aspirations; extending the library must never
 require breaking them:
 
-1. **Your keys are yours.** Non-`:assay/` keys in boundary maps and
+1. **Your keys are yours.** Non-`:clj-llm/` keys in boundary maps and
    non-reserved keys in protocol structures will never gain library
    meaning.
 2. **Stored data stays readable.** Message vectors and interaction
    records you persist today remain valid inputs forever; message
    `:content` is a string today and a vector of typed content parts is
    already reserved for multimodal futures.
-3. **Callbacks are type-tagged.** `:assay/on-chunk` payloads always
+3. **Callbacks are type-tagged.** `:clj-llm/on-chunk` payloads always
    carry `:type`; new types may appear, existing ones keep their shape.
    A callback that ignores unknown types never breaks.
 4. **Adapters keep working.** New request keys are ignorable, new result
@@ -419,8 +418,8 @@ require breaking them:
    `:default` implementations.
 5. **Error types are stable.** The `:type` keywords above never change
    meaning or disappear.
-6. **Unknown `:assay/` keys may become errors.** Don't invent keys in
-   the `:assay/` namespace; validation may tighten around them in any
+6. **Unknown `:clj-llm/` keys may become errors.** Don't invent keys in
+   the `:clj-llm/` namespace; validation may tighten around them in any
    release. (This is what makes 1–5 keepable.)
 
 ## Development
@@ -455,15 +454,13 @@ The documentation book (rendered with
 ## Design notes
 
 - Providers are *accounts/endpoints*; adapters are *wire protocols*.
-  Two entries in `:assay/providers` can share an adapter (e.g. OpenAI
+  Two entries in `:clj-llm/providers` can share an adapter (e.g. OpenAI
   and Groq), which is how one codebase talks to everything.
 - The verb is `generate`, not `chat` — a zero-shot completion isn't a
   conversation, and a conversation is just `generate` over accumulated
   messages.
 - Evals are data all the way down: suites are EDN, results are maps,
   and every production response is already an eval case in waiting.
-- The name: an assay is a quantitative test of quality — the library is
-  named for the discipline it's built around, measurement.
 
 ## License
 

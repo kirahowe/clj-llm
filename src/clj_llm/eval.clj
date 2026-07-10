@@ -1,16 +1,16 @@
-(ns assay.eval
+(ns clj-llm.eval
   "First-class evals: run cases against variants, score the results.
 
   There is no iterating toward 'the best' model/prompt/parameters without
-  measuring, so assay bakes evals in rather than leaving them as an
+  measuring, so clj-llm bakes evals in rather than leaving them as an
   exercise:
 
-  1. Every assay.core/generate response is already a complete
-     interaction record (:assay/request, :assay/usage, :assay/latency-ms,
-     ...). Set :assay/on-interaction under :assay/defaults in config to
+  1. Every clj-llm.core/generate response is already a complete
+     interaction record (:clj-llm/request, :clj-llm/usage, :clj-llm/latency-ms,
+     ...). Set :clj-llm/on-interaction under :clj-llm/defaults in config to
      collect records from live traffic — collected records replay
      directly as eval cases, since a case accepts the same
-     :assay/messages a record carries.
+     :clj-llm/messages a record carries.
   2. This namespace runs suites: cases × variants → scored results plus
      a per-variant summary, so changing a model or prompt becomes a
      benchmarked decision instead of a vibe.
@@ -18,27 +18,27 @@
   A suite is plain data — inline, or an EDN file read with the same
   aero reader as config files:
 
-    #:assay{:cases    [#:assay{:id :capital
+    #:clj-llm{:cases    [#:clj-llm{:id :capital
                                :input \"What is the capital of France?\"
                                :expected \"Paris\"}]
-            :variants [#:assay{:id :baseline :model :smart}
-                       #:assay{:id :cheap :model :fast :system \"Answer in one word.\"}]
+            :variants [#:clj-llm{:id :baseline :model :smart}
+                       #:clj-llm{:id :cheap :model :fast :system \"Answer in one word.\"}]
             :scorers  [:includes]}
 
     (eval/run config \"evals/suite.edn\")
-    ;; => #:assay{:results [...] :summary {:by-variant {...}}
+    ;; => #:clj-llm{:results [...] :summary {:by-variant {...}}
     ;;            :run-at #inst \"...\" :passed? true}
 
-  Cases:    :assay/id, plus :assay/input (a prompt string) or
-            :assay/messages (a full conversation), optional
-            :assay/expected (whatever your scorers need), and any custom
+  Cases:    :clj-llm/id, plus :clj-llm/input (a prompt string) or
+            :clj-llm/messages (a full conversation), optional
+            :clj-llm/expected (whatever your scorers need), and any custom
             keys your scorers read — unqualified and your-namespaced
             keys are yours.
-  Variants: :assay/id plus any generate request keys (:assay/model,
-            :assay/system, :assay/temperature, :assay/tools, ...) — a
+  Variants: :clj-llm/id plus any generate request keys (:clj-llm/model,
+            :clj-llm/system, :clj-llm/temperature, :clj-llm/tools, ...) — a
             variant IS the thing you are comparing.
   Scorers:  keywords naming built-ins (:exact-match, :includes,
-            :matches), maps #:assay{:id kw :fn f}, bare fns, or
+            :matches), maps #:clj-llm{:id kw :fn f}, bare fns, or
             qualified symbols (resolved with requiring-resolve, so EDN
             suites can name scorers defined in your code). A scorer
             receives {:config ... :case ... :variant ... :response ...}
@@ -46,55 +46,55 @@
             worth keeping (e.g. :reasoning). Use (llm-judge {...}) for
             model-graded scoring — the sensible default when there is no
             mechanical ground truth.
-  Task:     :assay/task (a fn or qualified symbol) is what a case×variant
+  Task:     :clj-llm/task (a fn or qualified symbol) is what a case×variant
             actually runs — (fn [{:keys [config case variant]}]) returning
             a response map. The default task builds a request from the
-            case and variant and calls assay.core/generate, which evals a
+            case and variant and calls clj-llm.core/generate, which evals a
             single LLM call. Supply your own task to eval any system
             *containing* LLM calls — a RAG pipeline, an agent loop, a
             whole handler — as long as it returns a map your scorers can
-            read (conventionally at least :assay/text; return real
+            read (conventionally at least :clj-llm/text; return real
             generate responses and latency/usage summaries stay accurate).
-  Thresholds: :assay/thresholds {scorer-id min-mean-score} makes the
+  Thresholds: :clj-llm/thresholds {scorer-id min-mean-score} makes the
             report (and the CLI exit code) fail when a variant's mean for
             that scorer drops below the minimum — evals as a CI gate, not
             just a report."
   (:require [charred.api :as json]
             [clojure.string :as str]
-            [assay.core :as llm]
-            [assay.config :as config]
-            [assay.spec :as spec])
+            [clj-llm.core :as llm]
+            [clj-llm.config :as config]
+            [clj-llm.spec :as spec])
   (:import (java.util.concurrent Callable Executors)))
 
 ;; ---------------------------------------------------------------------------
 ;; Built-in scorers
 
 (defn exact-match
-  "1.0 when the trimmed response text equals the trimmed :assay/expected."
+  "1.0 when the trimmed response text equals the trimmed :clj-llm/expected."
   [{:keys [case response]}]
-  {:score (if (= (str/trim (str (:assay/expected case)))
-                 (str/trim (str (:assay/text response))))
+  {:score (if (= (str/trim (str (:clj-llm/expected case)))
+                 (str/trim (str (:clj-llm/text response))))
             1.0 0.0)})
 
 (defn includes
-  "1.0 when the response text contains :assay/expected (case-insensitive)."
+  "1.0 when the response text contains :clj-llm/expected (case-insensitive)."
   [{:keys [case response]}]
-  {:score (if (str/includes? (str/lower-case (str (:assay/text response)))
-                             (str/lower-case (str (:assay/expected case))))
+  {:score (if (str/includes? (str/lower-case (str (:clj-llm/text response)))
+                             (str/lower-case (str (:clj-llm/expected case))))
             1.0 0.0)})
 
 (defn matches
-  "1.0 when the regex :assay/expected (string or pattern) matches the
+  "1.0 when the regex :clj-llm/expected (string or pattern) matches the
   response text."
   [{:keys [case response]}]
-  (let [pattern (let [e (:assay/expected case)]
+  (let [pattern (let [e (:clj-llm/expected case)]
                   (if (instance? java.util.regex.Pattern e) e (re-pattern (str e))))]
-    {:score (if (re-find pattern (str (:assay/text response))) 1.0 0.0)}))
+    {:score (if (re-find pattern (str (:clj-llm/text response))) 1.0 0.0)}))
 
 (def built-in-scorers
-  {:exact-match #:assay{:id :exact-match :fn exact-match}
-   :includes #:assay{:id :includes :fn includes}
-   :matches #:assay{:id :matches :fn matches}})
+  {:exact-match #:clj-llm{:id :exact-match :fn exact-match}
+   :includes #:clj-llm{:id :includes :fn includes}
+   :matches #:clj-llm{:id :matches :fn matches}})
 
 ;; ---------------------------------------------------------------------------
 ;; Model-graded scoring
@@ -108,11 +108,11 @@
 (defn- judge-prompt [criteria case response]
   (str "Evaluate the RESPONSE below.\n\n"
        "Criteria: " criteria "\n\n"
-       (when-let [input (:assay/input case)]
+       (when-let [input (:clj-llm/input case)]
          (str "Task given to the model:\n" input "\n\n"))
-       (when (some? (:assay/expected case))
-         (str "Reference answer:\n" (:assay/expected case) "\n\n"))
-       "RESPONSE:\n" (:assay/text response)))
+       (when (some? (:clj-llm/expected case))
+         (str "Reference answer:\n" (:clj-llm/expected case) "\n\n"))
+       "RESPONSE:\n" (:clj-llm/text response)))
 
 (defn parse-judge-reply
   "Extract {:score <0.0-1.0> :reasoning ...} from a judge's reply,
@@ -135,13 +135,13 @@
   names the scorer in results (default :llm-judge; give each judge its
   own :id when a suite uses several)."
   [{:keys [model criteria id] :or {id :llm-judge}}]
-  #:assay{:id id
-          :fn (fn [{:keys [config case response]}]
-                (let [reply (llm/generate config
-                                          (cond-> #:assay{:system judge-system-prompt
-                                                          :prompt (judge-prompt criteria case response)}
-                                            model (assoc :assay/model model)))]
-                  (parse-judge-reply (:assay/text reply))))})
+  #:clj-llm{:id id
+            :fn (fn [{:keys [config case response]}]
+                  (let [reply (llm/generate config
+                                            (cond-> #:clj-llm{:system judge-system-prompt
+                                                              :prompt (judge-prompt criteria case response)}
+                                              model (assoc :clj-llm/model model)))]
+                    (parse-judge-reply (:clj-llm/text reply))))})
 
 ;; ---------------------------------------------------------------------------
 ;; Running suites
@@ -159,57 +159,57 @@
     (or (built-in-scorers scorer)
         (throw (ex-info (str "Unknown built-in scorer " scorer ". Known: "
                              (pr-str (keys built-in-scorers)))
-                        {:type :assay/unknown-scorer :scorer scorer})))
+                        {:type :clj-llm/unknown-scorer :scorer scorer})))
 
     (qualified-symbol? scorer)
-    (normalize-scorer i (resolve-symbol scorer :assay/unknown-scorer))
+    (normalize-scorer i (resolve-symbol scorer :clj-llm/unknown-scorer))
 
     (map? scorer) scorer
-    (fn? scorer) #:assay{:id (keyword (str "scorer-" i)) :fn scorer}
+    (fn? scorer) #:clj-llm{:id (keyword (str "scorer-" i)) :fn scorer}
     :else (throw (ex-info (str "Unsupported scorer: " (pr-str scorer))
-                          {:type :assay/unknown-scorer :scorer scorer}))))
+                          {:type :clj-llm/unknown-scorer :scorer scorer}))))
 
 (defn case->request
   "The request the default task runs for a case × variant: the case's
   conversation with the variant's request keys merged in."
   [case variant]
   (merge (cond
-           (:assay/messages case) {:assay/messages (:assay/messages case)}
-           (:assay/input case) {:assay/messages [{:role :user
-                                                  :content (:assay/input case)}]}
-           :else (throw (ex-info (str "Case " (:assay/id case)
-                                      " needs :assay/input or :assay/messages")
-                                 {:type :assay/invalid-case :case case})))
-         (dissoc variant :assay/id)))
+           (:clj-llm/messages case) {:clj-llm/messages (:clj-llm/messages case)}
+           (:clj-llm/input case) {:clj-llm/messages [{:role :user
+                                                      :content (:clj-llm/input case)}]}
+           :else (throw (ex-info (str "Case " (:clj-llm/id case)
+                                      " needs :clj-llm/input or :clj-llm/messages")
+                                 {:type :clj-llm/invalid-case :case case})))
+         (dissoc variant :clj-llm/id)))
 
 (defn- default-task [{:keys [config case variant]}]
   (llm/generate config (case->request case variant)))
 
 (defn- resolve-task [suite]
-  (let [task (:assay/task suite)]
+  (let [task (:clj-llm/task suite)]
     (cond
       (nil? task) default-task
       (fn? task) task
-      (qualified-symbol? task) (resolve-symbol task :assay/invalid-suite)
-      :else (throw (ex-info (str "Unsupported :assay/task: " (pr-str task))
-                            {:type :assay/invalid-suite :task task})))))
+      (qualified-symbol? task) (resolve-symbol task :clj-llm/invalid-suite)
+      :else (throw (ex-info (str "Unsupported :clj-llm/task: " (pr-str task))
+                            {:type :clj-llm/invalid-suite :task task})))))
 
 (defn- run-one [config case variant scorers task]
-  (let [base #:assay{:case-id (:assay/id case) :variant-id (:assay/id variant)}]
+  (let [base #:clj-llm{:case-id (:clj-llm/id case) :variant-id (:clj-llm/id variant)}]
     (try
       (let [response (task {:config config :case case :variant variant})
             context {:config config :case case :variant variant
                      :response response}
             scores (into {}
-                         (map (fn [{scorer-id :assay/id scorer-fn :assay/fn}]
+                         (map (fn [{scorer-id :clj-llm/id scorer-fn :clj-llm/fn}]
                                 [scorer-id
                                  (try (scorer-fn context)
                                       (catch Exception e
                                         {:score 0.0 :error (ex-message e)}))]))
                          scorers)]
-        (assoc base :assay/response response :assay/scores scores))
+        (assoc base :clj-llm/response response :clj-llm/scores scores))
       (catch Exception e
-        (assoc base :assay/error (ex-message e) :assay/ex-data (ex-data e))))))
+        (assoc base :clj-llm/error (ex-message e) :clj-llm/ex-data (ex-data e))))))
 
 (defn- run-all [config jobs scorers task concurrency]
   (if (<= concurrency 1)
@@ -235,21 +235,21 @@
   [results]
   {:by-variant
    (into {}
-         (for [[variant-id variant-results] (group-by :assay/variant-id results)]
-           (let [ok (remove :assay/error variant-results)
-                 score-ids (distinct (mapcat (comp keys :assay/scores) ok))]
+         (for [[variant-id variant-results] (group-by :clj-llm/variant-id results)]
+           (let [ok (remove :clj-llm/error variant-results)
+                 score-ids (distinct (mapcat (comp keys :clj-llm/scores) ok))]
              [variant-id
               {:cases (count variant-results)
-               :errors (count (filter :assay/error variant-results))
-               :model (some #(get-in % [:assay/response :assay/model]) ok)
+               :errors (count (filter :clj-llm/error variant-results))
+               :model (some #(get-in % [:clj-llm/response :clj-llm/model]) ok)
                :scores (into {}
                              (for [scorer-id score-ids]
                                [scorer-id
-                                {:mean (mean (keep #(get-in % [:assay/scores scorer-id :score]) ok))}]))
-               :latency-ms {:mean (mean (keep #(get-in % [:assay/response :assay/latency-ms]) ok))
-                            :max (reduce max 0 (keep #(get-in % [:assay/response :assay/latency-ms]) ok))}
-               :usage {:input-tokens (reduce + 0 (keep #(get-in % [:assay/response :assay/usage :input-tokens]) ok))
-                       :output-tokens (reduce + 0 (keep #(get-in % [:assay/response :assay/usage :output-tokens]) ok))}}])))})
+                                {:mean (mean (keep #(get-in % [:clj-llm/scores scorer-id :score]) ok))}]))
+               :latency-ms {:mean (mean (keep #(get-in % [:clj-llm/response :clj-llm/latency-ms]) ok))
+                            :max (reduce max 0 (keep #(get-in % [:clj-llm/response :clj-llm/latency-ms]) ok))}
+               :usage {:input-tokens (reduce + 0 (keep #(get-in % [:clj-llm/response :clj-llm/usage :input-tokens]) ok))
+                       :output-tokens (reduce + 0 (keep #(get-in % [:clj-llm/response :clj-llm/usage :output-tokens]) ok))}}])))})
 
 (defn- thresholds-met? [summary thresholds]
   (every? (fn [[_variant-id s]]
@@ -261,14 +261,14 @@
 
 (defn run
   "Run an eval suite against `config`. `suite` is a map
-  #:assay{:cases [...] :variants [...] :scorers [...] :task ...
-  :thresholds {...}} or anything assay.config/read-config accepts (a
+  #:clj-llm{:cases [...] :variants [...] :scorers [...] :task ...
+  :thresholds {...}} or anything clj-llm.config/read-config accepts (a
   path to an EDN suite file).
 
   Options:
     :concurrency  how many cases to run in parallel (default 4)
 
-  Returns #:assay{:results [...] :summary {:by-variant {...}}
+  Returns #:clj-llm{:results [...] :summary {:by-variant {...}}
   :run-at <Instant> :passed? <bool, present when the suite has
   thresholds>} — plain data; print it with print-summary, diff it, or
   store it next to the config that produced it."
@@ -277,20 +277,20 @@
    (let [suite (spec/assert-suite!
                 (if (map? suite) suite (config/read-config suite)))
          task (resolve-task suite)
-         scorers (vec (map-indexed normalize-scorer (:assay/scorers suite)))
-         variants (or (not-empty (:assay/variants suite)) [{:assay/id :default}])
-         thresholds (:assay/thresholds suite)
+         scorers (vec (map-indexed normalize-scorer (:clj-llm/scorers suite)))
+         variants (or (not-empty (:clj-llm/variants suite)) [{:clj-llm/id :default}])
+         thresholds (:clj-llm/thresholds suite)
          run-at (java.time.Instant/now)
-         jobs (for [variant variants, case (:assay/cases suite)] [case variant])
+         jobs (for [variant variants, case (:clj-llm/cases suite)] [case variant])
          results (run-all config (vec jobs) scorers task concurrency)
          summary (summarize results)]
-     (cond-> #:assay{:results results
-                     :summary summary
-                     :run-at run-at
-                     :case-count (count (:assay/cases suite))
-                     :variant-count (count variants)}
-       (seq thresholds) (assoc :assay/thresholds thresholds
-                               :assay/passed? (thresholds-met? summary thresholds))))))
+     (cond-> #:clj-llm{:results results
+                       :summary summary
+                       :run-at run-at
+                       :case-count (count (:clj-llm/cases suite))
+                       :variant-count (count variants)}
+       (seq thresholds) (assoc :clj-llm/thresholds thresholds
+                               :clj-llm/passed? (thresholds-met? summary thresholds))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Reporting
@@ -303,7 +303,7 @@
 
 (defn print-summary
   "Print a per-variant comparison table for a `run` report."
-  [{:assay/keys [summary]}]
+  [{:clj-llm/keys [summary]}]
   (let [by-variant (:by-variant summary)
         scorer-ids (->> (vals by-variant) (mapcat (comp keys :scores)) distinct sort)
         headers (concat ["variant" "model" "cases" "errors"]
@@ -330,19 +330,19 @@
 (defn -main
   "Run a suite from the command line and print the summary.
 
-    clojure -M:dev -m assay.eval [suite.edn [llm.edn [profile]]]
+    clojure -M:dev -m clj-llm.eval [suite.edn [llm.edn [profile]]]
 
   Defaults: evals/suite.edn and llm.edn. Exits non-zero when any case
-  errored or a threshold was missed (see :assay/thresholds)."
+  errored or a threshold was missed (see :clj-llm/thresholds)."
   [& [suite-path config-path profile]]
   (let [config (llm/read-config (or config-path "llm.edn")
                                 (if profile {:profile (keyword profile)} {}))
         report (run config (or suite-path "evals/suite.edn"))]
     (print-summary report)
-    (let [errors (filter :assay/error (:assay/results report))
-          failed? (false? (:assay/passed? report))]
-      (doseq [{:assay/keys [case-id variant-id error]} errors]
+    (let [errors (filter :clj-llm/error (:clj-llm/results report))
+          failed? (false? (:clj-llm/passed? report))]
+      (doseq [{:clj-llm/keys [case-id variant-id error]} errors]
         (println "ERROR" case-id variant-id "-" error))
       (when failed?
-        (println "FAILED: score thresholds not met:" (pr-str (:assay/thresholds report))))
+        (println "FAILED: score thresholds not met:" (pr-str (:clj-llm/thresholds report))))
       (System/exit (if (or (seq errors) failed?) 1 0)))))

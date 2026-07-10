@@ -1,4 +1,4 @@
-(ns assay.spec
+(ns clj-llm.spec
   "Malli schemas for every public data contract — the source of truth
   for what each map looks like, and the boundary validation that turns
   a malformed input into an immediate, humanized error instead of a
@@ -8,7 +8,7 @@
 
   - Keys in maps that users author, store or extend — config, requests,
     responses/records, cases, variants, suites, reports — are namespaced
-    :assay/... Any key that is not :assay/-qualified in those maps is
+    :clj-llm/... Any key that is not :clj-llm/-qualified in those maps is
     yours, forever: the library will never assign meaning to it.
 
   - Protocol structures the library defines end-to-end — messages, tool
@@ -76,46 +76,46 @@
 (def ModelDesignator
   (m/schema
    [:or :keyword :string
-    [:map [:assay/provider :keyword] [:assay/model :string]]]))
+    [:map [:clj-llm/provider :keyword] [:clj-llm/model :string]]]))
 
 (def ProviderConfig
-  (m/schema [:map [:assay/adapter :keyword]]))
+  (m/schema [:map [:clj-llm/adapter :keyword]]))
 
 (def Config
   (m/schema
    [:map
-    [:assay/providers [:map-of :keyword [:map [:assay/adapter :keyword]]]]
-    [:assay/models {:optional true}
+    [:clj-llm/providers [:map-of :keyword [:map [:clj-llm/adapter :keyword]]]]
+    [:clj-llm/models {:optional true}
      [:map-of :keyword [:or :keyword :string
-                        [:map [:assay/provider :keyword] [:assay/model :string]]]]]
-    [:assay/defaults {:optional true} :map]]))
+                        [:map [:clj-llm/provider :keyword] [:clj-llm/model :string]]]]]
+    [:clj-llm/defaults {:optional true} :map]]))
 
 ;; ---------------------------------------------------------------------------
 ;; Requests and responses
 
 (def Request
-  "A generate request after normalization (prompt string / :assay/prompt
-  already folded into :assay/messages)."
+  "A generate request after normalization (prompt string / :clj-llm/prompt
+  already folded into :clj-llm/messages)."
   (m/schema
    [:map
-    [:assay/messages [:sequential Message]]
-    [:assay/model {:optional true} ModelDesignator]
-    [:assay/system {:optional true} [:maybe :string]]
-    [:assay/max-tokens {:optional true} pos-int?]
-    [:assay/temperature {:optional true} number?]
-    [:assay/tools {:optional true} [:sequential Tool]]
-    [:assay/max-tool-rounds {:optional true} pos-int?]
-    [:assay/on-chunk {:optional true} fn?]
-    [:assay/on-interaction {:optional true} fn?]
-    [:assay/options {:optional true} :map]]))
+    [:clj-llm/messages [:sequential Message]]
+    [:clj-llm/model {:optional true} ModelDesignator]
+    [:clj-llm/system {:optional true} [:maybe :string]]
+    [:clj-llm/max-tokens {:optional true} pos-int?]
+    [:clj-llm/temperature {:optional true} number?]
+    [:clj-llm/tools {:optional true} [:sequential Tool]]
+    [:clj-llm/max-tool-rounds {:optional true} pos-int?]
+    [:clj-llm/on-chunk {:optional true} fn?]
+    [:clj-llm/on-interaction {:optional true} fn?]
+    [:clj-llm/options {:optional true} :map]]))
 
 (def EmbedRequest
   (m/schema
    [:map
-    [:assay/model {:optional true} ModelDesignator]
-    [:assay/input [:sequential :string]]
-    [:assay/on-interaction {:optional true} fn?]
-    [:assay/options {:optional true} :map]]))
+    [:clj-llm/model {:optional true} ModelDesignator]
+    [:clj-llm/input [:sequential :string]]
+    [:clj-llm/on-interaction {:optional true} fn?]
+    [:clj-llm/options {:optional true} :map]]))
 
 (def Response
   "What generate/embed return — every response doubles as a replayable
@@ -123,20 +123,20 @@
   the library and not validated at runtime."
   (m/schema
    [:map
-    [:assay/text {:optional true} [:maybe :string]]
-    [:assay/messages {:optional true} [:sequential Message]]
-    [:assay/tool-calls {:optional true} [:sequential ToolCall]]
-    [:assay/model {:optional true} [:maybe :string]]
-    [:assay/provider {:optional true} :keyword]
-    [:assay/usage {:optional true} [:maybe Usage]]
-    [:assay/finish-reason {:optional true} [:maybe :keyword]]
-    [:assay/request {:optional true} :map]
-    [:assay/latency-ms {:optional true} number?]
-    [:assay/started-at {:optional true} inst?]
-    [:assay/op {:optional true} :keyword]
-    [:assay/raw {:optional true} :any]
-    [:assay/embedding {:optional true} [:sequential number?]]
-    [:assay/embeddings {:optional true} [:sequential [:sequential number?]]]]))
+    [:clj-llm/text {:optional true} [:maybe :string]]
+    [:clj-llm/messages {:optional true} [:sequential Message]]
+    [:clj-llm/tool-calls {:optional true} [:sequential ToolCall]]
+    [:clj-llm/model {:optional true} [:maybe :string]]
+    [:clj-llm/provider {:optional true} :keyword]
+    [:clj-llm/usage {:optional true} [:maybe Usage]]
+    [:clj-llm/finish-reason {:optional true} [:maybe :keyword]]
+    [:clj-llm/request {:optional true} :map]
+    [:clj-llm/latency-ms {:optional true} number?]
+    [:clj-llm/started-at {:optional true} inst?]
+    [:clj-llm/op {:optional true} :keyword]
+    [:clj-llm/raw {:optional true} :any]
+    [:clj-llm/embedding {:optional true} [:sequential number?]]
+    [:clj-llm/embeddings {:optional true} [:sequential [:sequential number?]]]]))
 
 ;; ---------------------------------------------------------------------------
 ;; Eval suites
@@ -145,34 +145,34 @@
   (m/schema
    [:and
     [:map
-     [:assay/id {:optional true} :keyword]
-     [:assay/input {:optional true} :string]
-     [:assay/messages {:optional true} [:sequential Message]]
-     [:assay/expected {:optional true} :any]]
-    [:fn {:error/message "needs :assay/input or :assay/messages"}
-     (fn [{:assay/keys [input messages]}]
+     [:clj-llm/id {:optional true} :keyword]
+     [:clj-llm/input {:optional true} :string]
+     [:clj-llm/messages {:optional true} [:sequential Message]]
+     [:clj-llm/expected {:optional true} :any]]
+    [:fn {:error/message "needs :clj-llm/input or :clj-llm/messages"}
+     (fn [{:clj-llm/keys [input messages]}]
        (boolean (or input messages)))]]))
 
 (def Variant
-  "A variant is :assay/id plus any generate request keys; extra
-  (non-assay) keys are yours and flow through to scorers."
-  (m/schema [:map [:assay/id {:optional true} :keyword]]))
+  "A variant is :clj-llm/id plus any generate request keys; extra
+  (non-clj-llm) keys are yours and flow through to scorers."
+  (m/schema [:map [:clj-llm/id {:optional true} :keyword]]))
 
 (def Scorer
   "A scorer designator: a built-in's keyword, a function, a qualified
-  symbol resolving to either, or a map of :assay/id and :assay/fn."
+  symbol resolving to either, or a map of :clj-llm/id and :clj-llm/fn."
   (m/schema
    [:or :keyword fn? qualified-symbol?
-    [:map [:assay/id :keyword] [:assay/fn fn?]]]))
+    [:map [:clj-llm/id :keyword] [:clj-llm/fn fn?]]]))
 
 (def Suite
   (m/schema
    [:map
-    [:assay/cases [:sequential Case]]
-    [:assay/variants {:optional true} [:sequential Variant]]
-    [:assay/scorers {:optional true} [:sequential Scorer]]
-    [:assay/task {:optional true} [:or fn? qualified-symbol?]]
-    [:assay/thresholds {:optional true} [:map-of :keyword number?]]]))
+    [:clj-llm/cases [:sequential Case]]
+    [:clj-llm/variants {:optional true} [:sequential Variant]]
+    [:clj-llm/scorers {:optional true} [:sequential Scorer]]
+    [:clj-llm/task {:optional true} [:or fn? qualified-symbol?]]
+    [:clj-llm/thresholds {:optional true} [:map-of :keyword number?]]]))
 
 ;; ---------------------------------------------------------------------------
 ;; Validation
@@ -189,13 +189,13 @@
                        :explain explanation})))))
 
 (defn assert-config! [config]
-  (assert! Config config :assay/invalid-config "Invalid assay config"))
+  (assert! Config config :clj-llm/invalid-config "Invalid clj-llm config"))
 
 (defn assert-request! [request]
-  (assert! Request request :assay/invalid-request "Invalid request"))
+  (assert! Request request :clj-llm/invalid-request "Invalid request"))
 
 (defn assert-embed-request! [request]
-  (assert! EmbedRequest request :assay/invalid-request "Invalid embed request"))
+  (assert! EmbedRequest request :clj-llm/invalid-request "Invalid embed request"))
 
 (defn assert-suite! [suite]
-  (assert! Suite suite :assay/invalid-suite "Invalid eval suite"))
+  (assert! Suite suite :clj-llm/invalid-suite "Invalid eval suite"))

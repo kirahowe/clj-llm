@@ -14,7 +14,7 @@
 
 (defn -main [& _]
   (clay/make! {:format [:quarto :html]
-               :book {:title "assay — LLM calls you can measure"}
+               :book {:title "clj-llm — LLM calls you can measure"}
                :base-source-path "notebooks"
                :source-path chapters
                :base-target-path "docs"

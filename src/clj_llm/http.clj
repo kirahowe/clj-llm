@@ -1,4 +1,4 @@
-(ns assay.http
+(ns clj-llm.http
   "HTTP support on java.net.http — the JDK's built-in client, so the
   library adds no HTTP dependencies. JSON in, JSON (or a reduction over
   response lines, for SSE/NDJSON streaming) out."
@@ -41,14 +41,14 @@
 
 (defn- error! [url status body]
   (throw (ex-info (str "LLM provider returned HTTP " status " for " url)
-                  {:type :assay/http-error
+                  {:type :clj-llm/http-error
                    :status status
                    :url url
                    :body body})))
 
 (defn post-json
   "POST `body` as JSON to `url`. Returns {:status n :body <parsed JSON,
-  keyword keys>}. Throws ex-info {:type :assay/http-error :status ...
+  keyword keys>}. Throws ex-info {:type :clj-llm/http-error :status ...
   :body ...} on a non-2xx response."
   [{:keys [url] :as request}]
   (let [^HttpResponse response (.send ^HttpClient @client

@@ -1,6 +1,6 @@
 (ns book.demo
   "A canned, deterministic provider adapter (:demo) plus a ready-made config, so the documentation book renders offline with no API keys — every example in the book actually executes against this. The code in the chapters is exactly what you would run against a real provider; only the config differs. It is also a compact end-to-end example of writing an adapter (see the adapters chapter for the annotated version)."
-  (:require [assay.provider :as provider]
+  (:require [clj-llm.provider :as provider]
             [clojure.string :as str]))
 
 (defn- canned-answer [text]
@@ -19,18 +19,18 @@
   (:content (last (filter #(= :user (:role %)) messages))))
 
 (defn- wants-tool? [request]
-  (and (seq (:assay/tools request))
-       (re-find #"(?i)weather" (str (last-user-text (:assay/messages request))))
-       (not-any? #(= :tool (:role %)) (:assay/messages request))))
+  (and (seq (:clj-llm/tools request))
+       (re-find #"(?i)weather" (str (last-user-text (:clj-llm/messages request))))
+       (not-any? #(= :tool (:role %)) (:clj-llm/messages request))))
 
 (defn- respond [request text]
-  (let [on-chunk (:assay/on-chunk request)
-        words (count (str/split (str (last-user-text (:assay/messages request))) #"\s+"))]
+  (let [on-chunk (:clj-llm/on-chunk request)
+        words (count (str/split (str (last-user-text (:clj-llm/messages request))) #"\s+"))]
     (when on-chunk
       (doseq [piece (partition-all 12 text)]
         (on-chunk {:type :text :text (apply str piece)})))
     {:message {:role :assistant :content text}
-     :model (:assay/model request)
+     :model (:clj-llm/model request)
      :usage {:input-tokens (+ 8 words) :output-tokens (count (str/split text #"\s+"))}
      :finish-reason :stop
      :raw {:demo true}}))
@@ -43,27 +43,27 @@
                :tool-calls [{:id "call_0"
                              :name "get-weather"
                              :arguments {:city "Berlin"}}]}
-     :model (:assay/model request)
+     :model (:clj-llm/model request)
      :usage {:input-tokens 21 :output-tokens 9}
      :finish-reason :tool-calls
      :raw {:demo true}}
-    (if-let [tool-result (:content (last (filter #(= :tool (:role %)) (:assay/messages request))))]
+    (if-let [tool-result (:content (last (filter #(= :tool (:role %)) (:clj-llm/messages request))))]
       (respond request (str "According to the tool, conditions are: " tool-result))
-      (respond request (canned-answer (last-user-text (:assay/messages request)))))))
+      (respond request (canned-answer (last-user-text (:clj-llm/messages request)))))))
 
 (defmethod provider/embed! :demo
   [_provider-config request _opts]
   (let [embed (fn [s] (mapv #(/ (double (mod (hash [s %]) 1000)) 1000.0) (range 4)))]
-    {:embeddings (mapv embed (:assay/input request))
-     :model (:assay/model request)
-     :usage {:input-tokens (reduce + (map #(count (str/split % #"\s+")) (:assay/input request)))}
+    {:embeddings (mapv embed (:clj-llm/input request))
+     :model (:clj-llm/model request)
+     :usage {:input-tokens (reduce + (map #(count (str/split % #"\s+")) (:clj-llm/input request)))}
      :raw {:demo true}}))
 
 (def config
-  "A config shaped exactly like a real one, pointing at the :demo adapter. Swap this for (assay/read-config \"llm.edn\") and every example in the book runs against your real providers."
-  #:assay{:providers {:demo {:assay/adapter :demo}}
-          :models {:smart #:assay{:provider :demo :model "demo-smart-1"}
-                   :fast #:assay{:provider :demo :model "demo-fast-1"}
-                   :embeddings #:assay{:provider :demo :model "demo-embed-1"}}
-          :defaults #:assay{:model :smart
-                            :embedding-model :embeddings}})
+  "A config shaped exactly like a real one, pointing at the :demo adapter. Swap this for (llm/read-config \"llm.edn\") and every example in the book runs against your real providers."
+  #:clj-llm{:providers {:demo {:clj-llm/adapter :demo}}
+            :models {:smart #:clj-llm{:provider :demo :model "demo-smart-1"}
+                     :fast #:clj-llm{:provider :demo :model "demo-fast-1"}
+                     :embeddings #:clj-llm{:provider :demo :model "demo-embed-1"}}
+            :defaults #:clj-llm{:model :smart
+                                :embedding-model :embeddings}})

@@ -1,8 +1,8 @@
-(ns assay.core-test
+(ns clj-llm.core-test
   "Core API tests against a scripted fake adapter — no network involved."
   (:require [clojure.test :refer [deftest is testing]]
-            [assay.core :as llm]
-            [assay.provider :as provider]))
+            [clj-llm.core :as llm]
+            [clj-llm.provider :as provider]))
 
 ;; A fake adapter whose provider config carries an atom of canned
 ;; responses; each generate! call pops one and records the request.
@@ -14,11 +14,11 @@
     (if (fn? response) (response request) response)))
 
 (defn scripted-config [responses & {:keys [requests defaults]}]
-  {:assay/providers {:fake {:assay/adapter ::scripted
-                            :responses (atom (vec responses))
-                            :requests requests}}
-   :assay/models {:default {:assay/provider :fake :assay/model "fake-1"}}
-   :assay/defaults (merge {:assay/model :default} defaults)})
+  {:clj-llm/providers {:fake {:clj-llm/adapter ::scripted
+                              :responses (atom (vec responses))
+                              :requests requests}}
+   :clj-llm/models {:default {:clj-llm/provider :fake :clj-llm/model "fake-1"}}
+   :clj-llm/defaults (merge {:clj-llm/model :default} defaults)})
 
 (defn text-response [text]
   {:message {:role :assistant :content text}
@@ -32,89 +32,89 @@
         config (scripted-config [(text-response "The sky is blue.")]
                                 :requests requests)
         response (llm/generate config "Why is the sky blue?")]
-    (is (= "The sky is blue." (:assay/text response)))
-    (is (= :stop (:assay/finish-reason response)))
-    (is (= :fake (:assay/provider response)))
-    (is (= "fake-1" (:assay/model response)))
-    (is (= {:input-tokens 10 :output-tokens 5} (:assay/usage response)))
-    (testing ":assay/messages contains the full conversation"
+    (is (= "The sky is blue." (:clj-llm/text response)))
+    (is (= :stop (:clj-llm/finish-reason response)))
+    (is (= :fake (:clj-llm/provider response)))
+    (is (= "fake-1" (:clj-llm/model response)))
+    (is (= {:input-tokens 10 :output-tokens 5} (:clj-llm/usage response)))
+    (testing ":clj-llm/messages contains the full conversation"
       (is (= [{:role :user :content "Why is the sky blue?"}
               {:role :assistant :content "The sky is blue."}]
-             (:assay/messages response))))
+             (:clj-llm/messages response))))
     (testing "the adapter saw the resolved model and normalized messages"
       (let [request (first @requests)]
-        (is (= "fake-1" (:assay/model request)))
+        (is (= "fake-1" (:clj-llm/model request)))
         (is (= [{:role :user :content "Why is the sky blue?"}]
-               (:assay/messages request)))))
+               (:clj-llm/messages request)))))
     (testing "the response doubles as an interaction record"
-      (is (= :generate (:assay/op response)))
-      (is (number? (:assay/latency-ms response)))
-      (is (inst? (:assay/started-at response)))
-      (is (= "fake-1" (get-in response [:assay/request :assay/model])))
+      (is (= :generate (:clj-llm/op response)))
+      (is (number? (:clj-llm/latency-ms response)))
+      (is (inst? (:clj-llm/started-at response)))
+      (is (= "fake-1" (get-in response [:clj-llm/request :clj-llm/model])))
       (is (= [{:role :user :content "Why is the sky blue?"}]
-             (get-in response [:assay/request :assay/messages]))))))
+             (get-in response [:clj-llm/request :clj-llm/messages]))))))
 
 (deftest interaction-records
-  (testing ":assay/on-interaction from config :assay/defaults receives the full record"
+  (testing ":clj-llm/on-interaction from config :clj-llm/defaults receives the full record"
     (let [records (atom [])
           config (scripted-config [(text-response "ok")]
-                                  :defaults {:assay/on-interaction
+                                  :defaults {:clj-llm/on-interaction
                                              #(swap! records conj %)})
           response (llm/generate config "hi")]
       (is (= [response] @records))))
 
-  (testing "tool :fns are scrubbed from the :assay/request echo"
+  (testing "tool :fns are scrubbed from the :clj-llm/request echo"
     (let [config (scripted-config [(text-response "ok")])
           response (llm/generate config "hi"
-                                 {:assay/tools [{:name "t" :parameters {}
-                                                 :fn (fn [_] "x")}]})]
+                                 {:clj-llm/tools [{:name "t" :parameters {}
+                                                   :fn (fn [_] "x")}]})]
       (is (= [{:name "t" :parameters {}}]
-             (get-in response [:assay/request :assay/tools])))))
+             (get-in response [:clj-llm/request :clj-llm/tools])))))
 
   (testing "a failing hook never breaks the call"
     (let [config (scripted-config [(text-response "ok")]
-                                  :defaults {:assay/on-interaction
+                                  :defaults {:clj-llm/on-interaction
                                              (fn [_] (throw (ex-info "boom" {})))})]
-      (is (= "ok" (:assay/text (llm/generate config "hi")))))))
+      (is (= "ok" (:clj-llm/text (llm/generate config "hi")))))))
 
 (deftest request-shapes-and-defaults
-  (testing ":assay/prompt shorthand and opts merging"
+  (testing ":clj-llm/prompt shorthand and opts merging"
     (let [requests (atom [])
           config (scripted-config [(text-response "ok")]
                                   :requests requests
-                                  :defaults {:assay/max-tokens 512})]
-      (llm/generate config {:assay/prompt "hi"} {:assay/temperature 0.2})
+                                  :defaults {:clj-llm/max-tokens 512})]
+      (llm/generate config {:clj-llm/prompt "hi"} {:clj-llm/temperature 0.2})
       (let [request (first @requests)]
-        (is (= [{:role :user :content "hi"}] (:assay/messages request)))
-        (is (= 512 (:assay/max-tokens request)) "config :assay/defaults flow into requests")
-        (is (= 0.2 (:assay/temperature request))))))
+        (is (= [{:role :user :content "hi"}] (:clj-llm/messages request)))
+        (is (= 512 (:clj-llm/max-tokens request)) "config :clj-llm/defaults flow into requests")
+        (is (= 0.2 (:clj-llm/temperature request))))))
 
   (testing "request values override config defaults"
     (let [requests (atom [])
           config (scripted-config [(text-response "ok")]
                                   :requests requests
-                                  :defaults {:assay/max-tokens 512})]
-      (llm/generate config {:assay/prompt "hi" :assay/max-tokens 64})
-      (is (= 64 (:assay/max-tokens (first @requests))))))
+                                  :defaults {:clj-llm/max-tokens 512})]
+      (llm/generate config {:clj-llm/prompt "hi" :clj-llm/max-tokens 64})
+      (is (= 64 (:clj-llm/max-tokens (first @requests))))))
 
   (testing "invalid requests throw"
     (let [config (scripted-config [])]
-      (is (thrown-with-msg? Exception #":assay/messages or :assay/prompt"
+      (is (thrown-with-msg? Exception #":clj-llm/messages or :clj-llm/prompt"
                             (llm/generate config {})))
       (is (thrown-with-msg? Exception #"prompt string or a request map"
                             (llm/generate config 42)))
       (testing "malformed request maps fail malli validation"
-        (let [ex (try (llm/generate config {:assay/messages "not-a-vector"})
+        (let [ex (try (llm/generate config {:clj-llm/messages "not-a-vector"})
                       nil
                       (catch Exception e e))]
           (is (some? ex))
-          (is (= :assay/invalid-request (:type (ex-data ex))))))
-      (testing "a non-string, non-map argument fails with :assay/invalid-request"
+          (is (= :clj-llm/invalid-request (:type (ex-data ex))))))
+      (testing "a non-string, non-map argument fails with :clj-llm/invalid-request"
         (let [ex (try (llm/generate config 42)
                       nil
                       (catch Exception e e))]
           (is (some? ex))
-          (is (= :assay/invalid-request (:type (ex-data ex)))))))))
+          (is (= :clj-llm/invalid-request (:type (ex-data ex)))))))))
 
 (deftest multi-turn-threading
   (let [requests (atom [])
@@ -122,10 +122,10 @@
         history [{:role :user :content "Pick a number."}
                  {:role :assistant :content "42"}
                  {:role :user :content "Now a prime."}]
-        response (llm/generate config {:assay/messages history})]
-    (is (= history (:assay/messages (first @requests))))
+        response (llm/generate config {:clj-llm/messages history})]
+    (is (= history (:clj-llm/messages (first @requests))))
     (is (= (conj history {:role :assistant :content "17"})
-           (:assay/messages response)))))
+           (:clj-llm/messages response)))))
 
 (def weather-tool-call
   {:id "call_1" :name "get-weather" :arguments {:city "Berlin"}})
@@ -148,84 +148,84 @@
                 :description "weather"
                 :parameters {:type "object"}
                 :fn (fn [args] (swap! calls conj args) {:temperature-c 21})}
-          response (llm/generate config "Weather in Berlin?" {:assay/tools [tool]})]
+          response (llm/generate config "Weather in Berlin?" {:clj-llm/tools [tool]})]
       (is (= [{:city "Berlin"}] @calls) "tool invoked with parsed arguments")
-      (is (= "It's 21°C in Berlin." (:assay/text response)))
-      (is (nil? (:assay/tool-calls response)))
+      (is (= "It's 21°C in Berlin." (:clj-llm/text response)))
+      (is (nil? (:clj-llm/tool-calls response)))
       (testing "usage is summed across rounds"
-        (is (= {:input-tokens 17 :output-tokens 8} (:assay/usage response))))
+        (is (= {:input-tokens 17 :output-tokens 8} (:clj-llm/usage response))))
       (testing "the tool result message was threaded back to the provider"
-        (let [tool-message (->> (:assay/messages (second @requests))
+        (let [tool-message (->> (:clj-llm/messages (second @requests))
                                 (filter #(= :tool (:role %)))
                                 first)]
           (is (= "call_1" (:tool-call-id tool-message)))
           (is (= "{\"temperature-c\":21}" (:content tool-message)))))
       (testing "the final conversation retains all rounds"
         (is (= [:user :assistant :tool :assistant]
-               (map :role (:assay/messages response)))))))
+               (map :role (:clj-llm/messages response)))))))
 
   (testing "tool errors are reported back to the model, not thrown"
     (let [config (scripted-config [(tool-call-response [weather-tool-call])
                                    (fn [request]
                                      (text-response
-                                      (:content (last (:assay/messages request)))))])
+                                      (:content (last (:clj-llm/messages request)))))])
           tool {:name "get-weather"
                 :fn (fn [_] (throw (ex-info "socket timeout" {})))}
-          response (llm/generate config "Weather?" {:assay/tools [tool]})]
+          response (llm/generate config "Weather?" {:clj-llm/tools [tool]})]
       (is (re-find #"Error executing tool get-weather: socket timeout"
-                   (:assay/text response)))))
+                   (:clj-llm/text response)))))
 
   (testing "tools without :fn are returned for manual handling"
     (let [config (scripted-config [(tool-call-response [weather-tool-call])])
           response (llm/generate config "Weather?"
-                                 {:assay/tools [{:name "get-weather"
-                                                 :parameters {:type "object"}}]})]
-      (is (= [weather-tool-call] (:assay/tool-calls response)))
-      (is (= :tool-calls (:assay/finish-reason response)))))
+                                 {:clj-llm/tools [{:name "get-weather"
+                                                   :parameters {:type "object"}}]})]
+      (is (= [weather-tool-call] (:clj-llm/tool-calls response)))
+      (is (= :tool-calls (:clj-llm/finish-reason response)))))
 
-  (testing "the loop is bounded by :assay/max-tool-rounds"
+  (testing "the loop is bounded by :clj-llm/max-tool-rounds"
     (let [n (atom 0)
           config (scripted-config
                   (repeat 10 (tool-call-response [weather-tool-call])))
           tool {:name "get-weather" :fn (fn [_] (swap! n inc) "sunny")}
           response (llm/generate config "Weather?"
-                                 {:assay/tools [tool] :assay/max-tool-rounds 2})]
+                                 {:clj-llm/tools [tool] :clj-llm/max-tool-rounds 2})]
       (is (= 2 @n) "tool ran once per allowed round")
-      (is (= [weather-tool-call] (:assay/tool-calls response))
+      (is (= [weather-tool-call] (:clj-llm/tool-calls response))
           "unresolved tool calls surface to the caller when the cap is hit"))))
 
 (deftest streaming-callback-passthrough
   (let [config (scripted-config
-                [(fn [{:assay/keys [on-chunk]}]
+                [(fn [{:clj-llm/keys [on-chunk]}]
                    (doseq [t ["Once" " upon" " a time"]]
                      (on-chunk {:type :text :text t}))
                    (text-response "Once upon a time"))])
         chunks (atom [])
         response (llm/generate config "story"
-                               {:assay/on-chunk #(swap! chunks conj %)})]
+                               {:clj-llm/on-chunk #(swap! chunks conj %)})]
     (is (= ["Once" " upon" " a time"] (map :text @chunks)))
     (is (every? #(= :text (:type %)) @chunks))
-    (is (= "Once upon a time" (:assay/text response)))))
+    (is (= "Once upon a time" (:clj-llm/text response)))))
 
 (deftest embeddings
   (let [seen (atom nil)]
     (defmethod provider/embed! ::scripted
       [_ request _opts]
       (reset! seen request)
-      {:embeddings (mapv (constantly [0.1 0.2]) (:assay/input request))
-       :model (:assay/model request)
+      {:embeddings (mapv (constantly [0.1 0.2]) (:clj-llm/input request))
+       :model (:clj-llm/model request)
        :usage {:input-tokens 2}
        :raw {}})
-    (let [config {:assay/providers {:fake {:assay/adapter ::scripted}}
-                  :assay/models {:emb {:assay/provider :fake :assay/model "embedder-1"}}
-                  :assay/defaults {:assay/embedding-model :emb}}]
+    (let [config {:clj-llm/providers {:fake {:clj-llm/adapter ::scripted}}
+                  :clj-llm/models {:emb {:clj-llm/provider :fake :clj-llm/model "embedder-1"}}
+                  :clj-llm/defaults {:clj-llm/embedding-model :emb}}]
       (testing "single string input"
         (let [response (llm/embed config "hello")]
-          (is (= ["hello"] (:assay/input @seen)))
-          (is (= "embedder-1" (:assay/model @seen)))
-          (is (= [0.1 0.2] (:assay/embedding response)))
-          (is (= :fake (:assay/provider response)))))
-      (testing "seq input has no :assay/embedding, only :assay/embeddings"
+          (is (= ["hello"] (:clj-llm/input @seen)))
+          (is (= "embedder-1" (:clj-llm/model @seen)))
+          (is (= [0.1 0.2] (:clj-llm/embedding response)))
+          (is (= :fake (:clj-llm/provider response)))))
+      (testing "seq input has no :clj-llm/embedding, only :clj-llm/embeddings"
         (let [response (llm/embed config ["a" "b"])]
-          (is (= [[0.1 0.2] [0.1 0.2]] (:assay/embeddings response)))
-          (is (nil? (:assay/embedding response))))))))
+          (is (= [[0.1 0.2] [0.1 0.2]] (:clj-llm/embeddings response)))
+          (is (nil? (:clj-llm/embedding response))))))))
