@@ -1,0 +1,72 @@
+name: book
+
+# Render the documentation book with Clay + Quarto and publish it to GitHub Pages.
+# The book evaluates every chapter against the in-process book.demo adapter, so the
+# build needs no API keys or other secrets.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - notebooks/**
+      - deps.edn
+      - bb.edn
+      - .github/workflows/book.yml
+  workflow_dispatch:
+
+# Permissions the deploy-pages action needs to publish.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let one deploy finish before the next starts; don't cancel an in-flight publish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: DeLaGuardo/setup-clojure@13.6.1
+        with:
+          cli: latest
+          bb: latest
+
+      - uses: quarto-dev/quarto-actions/setup@v2
+
+      - name: Cache Clojure dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.gitlibs
+          key: ${{ runner.os }}-cljdeps-${{ hashFiles('deps.edn') }}
+          restore-keys: ${{ runner.os }}-cljdeps-
+
+      - name: Render book
+        run: bb book
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

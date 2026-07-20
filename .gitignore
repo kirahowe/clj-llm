@@ -13,6 +13,8 @@ pom.xml.asc
 .hgignore
 .hg/
 
-# Clay/Quarto book build artifacts (docs/ is committed only when publishing)
+# Clay/Quarto book build artifacts. The book is rendered in CI (.github/workflows/book.yml)
+# and published straight to GitHub Pages, so the built docs/ is never committed.
 .clay/
 temp/
+docs/
