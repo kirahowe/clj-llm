@@ -1,6 +1,6 @@
 ;; # Getting started
 
-;; This chapter walks from an empty project to a first response, and then takes the response map apart. Everything on this page executes when the book is rendered — against the canned `book.demo` provider, so it runs offline; with a real config the code is identical.
+;; This chapter walks from an empty project to a first response, and then takes the response map apart. Everything on this page executes when the book is rendered, against the canned `book.demo` provider, so it runs offline. With a real config the code is identical.
 
 (ns getting-started
   (:require [clj-llm.core :as llm]
@@ -27,7 +27,7 @@
 ;;             :max-tokens #profile {:dev 1024 :default 4096}}}
 ;; ```
 
-;; Three ideas are packed in there. **Providers** are accounts or endpoints — an Anthropic account, a Groq account, an Ollama server on your LAN. Each names an **adapter** (`:lib/adapter`), which is the wire protocol to speak; the `:openai` adapter covers every OpenAI-compatible service, which is most of them, so two providers often share one adapter. **Model aliases** let application code ask for an intent — `:smart`, `:fast` — while the config decides which vendor and model that currently means; swapping providers is a config edit, not a code change. Within a provider map, everything other than `:lib/adapter` (like `:api-key` and `:base-url`) belongs to that adapter and flows through untouched.
+;; Three ideas are packed in there. **Providers** are accounts or endpoints: an Anthropic account, a Groq account, an Ollama server on your LAN. Each names an **adapter** (`:lib/adapter`), which is the wire protocol to speak; the `:openai` adapter covers every OpenAI-compatible service, which is most of them, so two providers often share one adapter. **Model aliases** let application code ask for an intent (`:smart`, `:fast`) while the config decides which vendor and model that currently means; swapping providers is a config edit, not a code change. Within a provider map, everything other than `:lib/adapter` (like `:api-key` and `:base-url`) belongs to that adapter and flows through untouched.
 
 ;; Load a config file with `llm/read-config` (aero options such as `:profile` pass through):
 
@@ -36,7 +36,7 @@
 ;; (def config (llm/read-config "llm.edn" {:profile :dev}))
 ;; ```
 
-;; The result is just a map, and nothing downstream cares where it came from — hand-written maps, aero, or an integrant system key all work identically. For this book we use the demo config, which is shaped exactly like the real one above but points at a canned in-process adapter:
+;; The result is just a map, and nothing downstream cares where it came from: hand-written maps, aero, or an integrant system key all work identically. For this book we use the demo config, which is shaped exactly like the real one above but points at a canned in-process adapter:
 
 (def config demo/config)
 
@@ -46,14 +46,14 @@
 
 (llm/generate config "What is the capital of France?")
 
-;; That map is worth reading carefully, because it is the library's central data structure. The library's keys are all namespaced `:lib/...` (any other key in maps you build or store is yours forever — see the design chapter), and the interesting ones are:
+;; That map is worth reading carefully, because it is the library's central data structure. The library's keys are all namespaced `:lib/...` (any other key in maps you build or store is yours forever; see the design chapter), and the interesting ones are:
 
-;; - `:lib/text` — the reply, as a string. This is the accessor to reach for; it stays stable even as message internals grow richer.
-;; - `:lib/messages` — the full conversation including the reply, as plain `{:role ... :content ...}` maps. Conj your next user message onto this to continue the conversation.
-;; - `:lib/usage` — `{:input-tokens n :output-tokens n}`; with tool use, summed over all rounds.
-;; - `:lib/finish-reason` — `:stop`, `:length`, `:tool-calls`, `:refusal`, ... an open set, so handle unknown keywords gracefully.
-;; - `:lib/request`, `:lib/latency-ms`, `:lib/started-at`, `:lib/op` — the response doubles as a complete, replayable *interaction record*; this is the foundation the eval system builds on, and the evals chapter picks it up from here.
-;; - `:lib/raw` — the provider's parsed wire response, when you need something the normalized keys don't carry.
+;; - `:lib/text`: the reply, as a string. This is the accessor to reach for; it stays stable even as message internals grow richer.
+;; - `:lib/messages`: the full conversation including the reply, as plain `{:role ... :content ...}` maps. Conj your next user message onto this to continue the conversation.
+;; - `:lib/usage`: `{:input-tokens n :output-tokens n}`; with tool use, summed over all rounds.
+;; - `:lib/finish-reason`: `:stop`, `:length`, `:tool-calls`, `:refusal`, ... an open set, so handle unknown keywords gracefully.
+;; - `:lib/request`, `:lib/latency-ms`, `:lib/started-at`, `:lib/op`: the response doubles as a complete, replayable *interaction record*. This is the foundation the eval system builds on, and the evals chapter picks it up from here.
+;; - `:lib/raw`: the provider's parsed wire response, when you need something the normalized keys don't carry.
 
 ;; ## Requests beyond a string
 
@@ -68,7 +68,7 @@
 
 (llm/generate config "What is 17 * 23?" {:lib/model :fast})
 
-;; Models can be picked per call three ways — an alias keyword from config, a `"provider/model-id"` string (split on the first slash, so model ids containing slashes work), or an explicit map:
+;; Models can be picked per call three ways: an alias keyword from config, a `"provider/model-id"` string (split on the first slash, so model ids containing slashes work), or an explicit map:
 
 (:lib/model (llm/generate config "hi" {:lib/model "demo/demo-custom-7"}))
 
@@ -84,7 +84,7 @@
 
 ;; ## When things go wrong
 
-;; Malformed inputs fail fast at the boundary — every public contract has a [malli](https://github.com/metosin/malli) schema (see the `clj-llm.spec` namespace), and violations throw `ex-info` with a humanized `:explain`:
+;; Malformed inputs fail fast at the boundary. Every public contract has a [malli](https://github.com/metosin/malli) schema (see the `clj-llm.spec` namespace), and violations throw `ex-info` with a humanized `:explain`:
 
 (try
   (llm/generate config {:lib/messages "not a vector of messages"})
@@ -92,4 +92,4 @@
     {:type (:type (ex-data e))
      :explain (:explain (ex-data e))}))
 
-;; HTTP failures from providers throw `ex-info` with `{:type :lib/http-error :status ... :body ...}` — the parsed error body, so a 401's message is right there in the ex-data. The full list of stable error types is in the design chapter.
+;; HTTP failures from providers throw `ex-info` with `{:type :lib/http-error :status ... :body ...}`, where `:body` is the parsed error body, so a 401's message is right there in the ex-data. The full list of stable error types is in the design chapter.
