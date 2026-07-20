@@ -1,6 +1,6 @@
 # Writing a provider adapter
 
-The three built-in adapters cover Anthropic, everything that speaks the OpenAI chat-completions protocol, and Ollama's native API. If you need another wire protocol — a niche provider, an internal gateway, a test double — an adapter is a page of code: multimethod implementations dispatching on the `:lib/adapter` key of a provider config map.
+The three built-in adapters cover Anthropic, everything that speaks the OpenAI chat-completions protocol, and Ollama's native API. If you need another wire protocol (a niche provider, an internal gateway, a test double), an adapter is a page of code: multimethod implementations dispatching on the `:lib/adapter` key of a provider config map.
 
 ## The minimum viable adapter
 
@@ -35,11 +35,11 @@ Register it in config like any built-in:
                          :api-key #env ACME_API_KEY}}}
 ```
 
-That's genuinely all: `generate` resolves the provider, applies defaults, runs the tool loop, builds the interaction record — your adapter only translates one normalized request into one wire call and one normalized result back.
+That's the whole job: `generate` resolves the provider, applies defaults, runs the tool loop, and builds the interaction record. Your adapter only translates one normalized request into one wire call and one normalized result back.
 
 ## The contract
 
-`clj-llm.provider` splits into an SPI and an API, the same shape as Integrant's `init-key`/`init`: you *implement* the `-`-prefixed multimethods, and code *calls* the unprefixed functions (`provider/generate!` etc.), where the trailing `opts` map is optional. Your `-generate!` receives three arguments — the raw provider config (so your own keys like `:api-key` flow through untouched), the normalized request, and a reserved `opts` map (empty today; accept and ignore it):
+`clj-llm.provider` splits into an SPI and an API, the same shape as Integrant's `init-key`/`init`: you *implement* the `-`-prefixed multimethods, and code *calls* the unprefixed functions (`provider/generate!` etc.), where the trailing `opts` map is optional. Your `-generate!` receives three arguments: the raw provider config (so your own keys like `:api-key` flow through untouched), the normalized request, and a reserved `opts` map (empty today; accept and ignore it):
 
 ```clojure
 #:lib{:model       "model-id"         ; already resolved to a string
@@ -49,7 +49,7 @@ That's genuinely all: `generate` resolves the provider, applies defaults, runs t
       :temperature 0.7                ; optional
       :tools       [{:name ... :description ... :parameters ... :fn ...}]
       :on-chunk    (fn [{:keys [type text]}] ...)  ; optional; emit {:type :text :text delta}
-      :options     {...}}             ; provider-specific passthrough — merge into your wire body last
+      :options     {...}}             ; provider-specific passthrough; merge into your wire body last
 ```
 
 And returns:
@@ -64,12 +64,12 @@ And returns:
 
 Conventions the built-ins follow, worth copying:
 
-- **Honor `:lib/options` by merging it into the wire body last** — it's the user's escape hatch for anything your adapter doesn't model.
+- **Honor `:lib/options` by merging it into the wire body last.** It's the user's escape hatch for anything your adapter doesn't model.
 - **Streaming**: when `:lib/on-chunk` is present, call it with `{:type :text :text delta}` per text delta and still return the complete result. `clj-llm.http/post-json-lines` reduces over response lines (SSE and NDJSON both), and `clj-llm.http/sse-data` extracts SSE data payloads.
 - **Errors**: let `clj-llm.http`'s `:lib/http-error` propagate; throw `ex-info` with `{:type :lib/missing-api-key}` for configuration problems you detect yourself.
 - **Structure for testability**: keep pure `build-request` / `parse-response` functions separate from the multimethod, so your adapter tests need no HTTP at all. See `clj-llm.providers.ollama` for the compact reference implementation, and `book.demo` in this book's source for a no-HTTP test double.
-- **Embeddings, lifecycle**: implement `-embed!` if the provider has embeddings; implement `-start`/`-stop` (each `[provider-config opts]`) only if your adapter needs real state like OAuth token refresh — the integrant bindings call them on system start/halt.
+- **Embeddings, lifecycle**: implement `-embed!` if the provider has embeddings; implement `-start`/`-stop` (each `[provider-config opts]`) only if your adapter needs real state like OAuth token refresh. The integrant bindings call them on system start/halt.
 
 ## What clj-llm promises your adapter
 
-The compatibility rules (also in the `clj-llm.provider` docstring): new request keys are additive and ignorable; new result keys are always optional; the SPI signatures are frozen — anything new travels inside `request` or `opts`, never as a new positional argument; and any future SPI multimethod ships with a `:default`, so your adapter never has to change just to keep loading. An adapter written today is an adapter that works in every future version.
+The compatibility rules (also in the `clj-llm.provider` docstring): new request keys are additive and ignorable; new result keys are always optional; the SPI signatures are frozen, so anything new travels inside `request` or `opts`, never as a new positional argument; and any future SPI multimethod ships with a `:default`, so your adapter never has to change just to keep loading. An adapter written today is an adapter that works in every future version.

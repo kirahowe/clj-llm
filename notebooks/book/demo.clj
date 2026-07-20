@@ -1,5 +1,5 @@
 (ns book.demo
-  "A canned, deterministic provider adapter (:demo) plus a ready-made config, so the documentation book renders offline with no API keys — every example in the book actually executes against this. The code in the chapters is exactly what you would run against a real provider; only the config differs. It is also a compact end-to-end example of writing an adapter (see the adapters chapter for the annotated version)."
+  "A canned, deterministic provider adapter (:demo) plus a ready-made config, so the documentation book renders offline with no API keys; every example in the book actually executes against this. The code in the chapters is exactly what you would run against a real provider; only the config differs. It is also a compact end-to-end example of writing an adapter (see the adapters chapter for the annotated version)."
   (:require [clj-llm.provider :as provider]
             [clojure.string :as str]))
 
@@ -7,7 +7,7 @@
   (condp (fn [re s] (re-find re s)) (str text)
     #"(?i)capital of france" "Paris"
     #"(?i)17 \* 23" "391"
-    #"(?i)sky.*blue" "Because air molecules scatter short (blue) wavelengths of sunlight more strongly than long ones — Rayleigh scattering."
+    #"(?i)sky.*blue" "Because air molecules scatter short (blue) wavelengths of sunlight more strongly than long ones (Rayleigh scattering)."
     #"(?i)prime number between" "127 is a prime between 100 and 200."
     #"(?i)why is it prime" "127 has no divisors other than 1 and itself; trial division up to its square root (≈11.3) finds none."
     #"(?i)story" "Once upon a time, a parenthesis opened. Everything since is still in scope."

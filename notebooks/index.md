@@ -1,6 +1,6 @@
-# clj-llm
+# clj-llm {.unnumbered}
 
-A small, functional Clojure library for calling large language models — any model, from any provider, including local ones — with evals built in from the ground up.
+A small, functional Clojure library for calling large language models, with evals built in. It works with any model from any provider, including local ones.
 
 The premise: you can't build well with LLMs unless measuring what they do is as easy as calling them. Most LLM libraries treat evaluation as someone else's problem; here every response is already a replayable measurement record, and turning a folder of real interactions into a scored comparison of models, prompts, or whole pipelines is a one-liner.
 
@@ -29,12 +29,12 @@ And the part the library is built around:
 
 ## Principles
 
-- **Stateless and functional.** No client objects, no sessions, no global state. Every function takes a config map and returns data, so the same calls work in a web handler, a CLI, a background job, or the REPL.
+- **Stateless and functional.** There are no client objects, sessions, or global state. Every function takes a config map and returns data, so the same calls work in a web handler, a CLI, a background job, or the REPL.
 - **Config is data.** Providers, model aliases and defaults live in an EDN file read with [aero](https://github.com/juxt/aero); API keys come from the environment via `#env`. Code names intents (`:smart`, `:fast`); config decides what they mean.
 - **Conversations are data.** A conversation is a vector of message maps; multi-turn means passing the previous messages back in.
-- **Evals are first class.** Suites are EDN, scorers are functions, reports are maps, thresholds can gate CI — and the thing under test can be a single call or your whole system.
+- **Evals are first class.** Suites are EDN, scorers are functions, reports are maps, and thresholds can gate CI. The thing under test can be a single call or your whole system.
 - **One protocol away from any provider.** Adapters are multimethods; the OpenAI-compatible adapter alone covers most of the hosted and self-hosted ecosystem.
-- **Compatible forever.** The keyspace is partitioned so your keys can never collide with the library's, every contract has a malli schema, and the compatibility promises are documented in the [design chapter](design.html).
+- **Compatible forever.** The keyspace is partitioned so your keys can never collide with the library's, every contract has a malli schema, and the compatibility promises are documented in the [design chapter](notebooks/design.md).
 
 ## Installation
 
@@ -50,8 +50,8 @@ Dependencies are deliberately light: [aero](https://github.com/juxt/aero), [char
 
 ## One rule before the examples
 
-Every key the library defines in maps you author or store — config, requests, responses, eval suites, reports — is namespaced `:lib/...`. Any other key in those maps is yours, forever. Conversation-shaped structures (messages, tool definitions, tool calls, usage, stream chunks, scores) keep their plain industry-standard keys (`:role`, `:content`, `:score`, ...), and *that* plain keyspace is reserved by the library. Clojure's namespaced-map literal keeps the qualified form light: `#:lib{:prompt "hi" :model :fast}`.
+Every key the library defines in maps you author or store (config, requests, responses, eval suites, reports) is namespaced `:lib/...`. Any other key in those maps is yours, forever. Conversation-shaped structures (messages, tool definitions, tool calls, usage, stream chunks, scores) keep their plain industry-standard keys (`:role`, `:content`, `:score`, ...), and *that* plain keyspace is reserved by the library. Clojure's namespaced-map literal keeps the qualified form light: `#:lib{:prompt "hi" :model :fast}`.
 
 ## How this book runs
 
-Every code example in the `.clj` chapters is evaluated when the book is rendered. To keep that deterministic and offline, the examples run against a canned in-process adapter (`book.demo`) whose config is shaped exactly like a real one — swap in `(llm/read-config "llm.edn")` and the same code talks to real providers.
+Every code example in the `.clj` chapters is evaluated when the book is rendered. To keep that deterministic and offline, the examples run against a canned in-process adapter (`book.demo`) whose config is shaped exactly like a real one. Swap in `(llm/read-config "llm.edn")` and the same code talks to real providers.

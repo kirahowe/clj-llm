@@ -23,6 +23,10 @@
   book {:doc "Render the documentation book with Clay + Quarto into docs/"
         :task (clojure "-M:book")}
 
+  book:watch {:doc "Render the book, then serve it with quarto preview (live reload)"
+              :depends [book]
+              :task (shell {:dir "docs"} "quarto preview")}
+
   eval {:doc "Run an eval suite: bb eval [suite.edn [llm.edn [profile]]]"
         :task (apply clojure "-M:dev" "-m" "clj-llm.eval"
                      *command-line-args*)}
