@@ -16,7 +16,7 @@
                          max_completion_tokens (the current protocol field)
                          by default — set true for older OpenAI-compatible
                          servers that only understand max_tokens"
-  (:require [charred.api :as json]
+  (:require [cheshire.core :as json]
             [clj-llm.http :as http]
             [clj-llm.provider :as provider]))
 
@@ -41,7 +41,7 @@
                                 {:id id
                                  :type "function"
                                  :function {:name name
-                                            :arguments (json/write-json-str arguments)}})
+                                            :arguments (json/generate-string arguments)}})
                               tool-calls)))
     {:role (name role) :content content}))
 
@@ -78,7 +78,7 @@
   (cond
     (map? arguments) arguments
     (or (nil? arguments) (= "" arguments)) {}
-    :else (json/read-json arguments :key-fn keyword)))
+    :else (json/parse-string arguments true)))
 
 (defn parse-response
   "Normalize a (parsed) chat-completions response body."
@@ -175,7 +175,7 @@
              (let [data (http/sse-data line)]
                (if (or (nil? data) (= "[DONE]" data))
                  state
-                 (reduce-chunk state (json/read-json data :key-fn keyword) on-chunk))))
+                 (reduce-chunk state (json/parse-string data true) on-chunk))))
            initial-stream-state)
           finalize-stream)
       (-> (http/post-json http-req) :body parse-response))))

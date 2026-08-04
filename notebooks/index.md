@@ -46,7 +46,7 @@ Not yet on Clojars. Use it as a git dependency:
                             :git/sha "..."}}}
 ```
 
-Dependencies are deliberately light: [aero](https://github.com/juxt/aero), [charred](https://github.com/cnuernber/charred) and [malli](https://github.com/metosin/malli); HTTP uses the JDK's built-in `java.net.http` client.
+Dependencies are deliberately light: [aero](https://github.com/juxt/aero), [cheshire](https://github.com/dakrone/cheshire) and [malli](https://github.com/metosin/malli); HTTP uses the JDK's built-in `java.net.http` client.
 
 ## One rule before the examples
 

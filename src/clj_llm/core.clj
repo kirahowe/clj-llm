@@ -46,7 +46,7 @@
   maps are yours forever. Messages, tools, tool calls, usage and stream
   chunks are plain-keyed protocol structures whose plain keyspace is
   reserved — see clj-llm.spec for the full schemas."
-  (:require [charred.api :as json]
+  (:require [cheshire.core :as json]
             [clj-llm.config :as config]
             [clj-llm.provider :as provider]
             [clj-llm.spec :as spec]
@@ -103,7 +103,7 @@
   (let [tool (find-tool tools tool-call)
         result (try
                  (let [value ((:fn tool) (:arguments tool-call))]
-                   (if (string? value) value (json/write-json-str value)))
+                   (if (string? value) value (json/generate-string value)))
                  (catch Exception e
                    (str "Error executing tool " name ": " (ex-message e))))]
     {:role :tool

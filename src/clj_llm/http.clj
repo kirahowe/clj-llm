@@ -2,7 +2,7 @@
   "HTTP support on java.net.http — the JDK's built-in client, so the
   library adds no HTTP dependencies. JSON in, JSON (or a reduction over
   response lines, for SSE/NDJSON streaming) out."
-  (:require [charred.api :as json]
+  (:require [cheshire.core :as json]
             [clojure.java.io :as io]
             [clojure.string :as str])
   (:import (java.net URI)
@@ -28,7 +28,7 @@
                     (.header "content-type" "application/json")
                     (.header "accept" "application/json")
                     (.POST (HttpRequest$BodyPublishers/ofString
-                            (json/write-json-str body))))]
+                            (json/generate-string body))))]
     (doseq [[k v] headers]
       (.header builder (name k) (str v)))
     (.build builder)))
@@ -36,7 +36,7 @@
 (defn- parse-json [s]
   (when-not (str/blank? s)
     (try
-      (json/read-json s :key-fn keyword)
+      (json/parse-string s true)
       (catch Exception _ s))))
 
 (defn- error! [url status body]

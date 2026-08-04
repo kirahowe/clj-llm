@@ -11,7 +11,7 @@
     :headers        optional map of extra headers
     :timeout-ms     optional request timeout (local models can be slow to
                     load — the default is 120s)"
-  (:require [charred.api :as json]
+  (:require [cheshire.core :as json]
             [clj-llm.http :as http]
             [clj-llm.provider :as provider]))
 
@@ -131,7 +131,7 @@
       (-> (http/post-json-lines
            http-req
            (fn [state line]
-             (reduce-chunk state (json/read-json line :key-fn keyword) on-chunk))
+             (reduce-chunk state (json/parse-string line true) on-chunk))
            initial-stream-state)
           finalize-stream)
       (-> (http/post-json http-req) :body parse-response))))

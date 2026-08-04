@@ -34,7 +34,7 @@ Inspired by [RubyLLM](https://rubyllm.com), rebuilt on Clojure values:
   part of the API.
 
 Built on the JDK's own `java.net.http` client plus
-[charred](https://github.com/cnuernber/charred),
+[cheshire](https://github.com/dakrone/cheshire),
 [aero](https://github.com/juxt/aero) and
 [malli](https://github.com/metosin/malli).
 

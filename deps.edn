@@ -2,7 +2,7 @@
 
  :deps {org.clojure/clojure {:mvn/version "1.12.5"}
         aero/aero {:mvn/version "1.1.6"}
-        com.cnuernber/charred {:mvn/version "1.034"}
+        cheshire/cheshire {:mvn/version "6.2.0"}
         metosin/malli {:mvn/version "0.20.1"}}
 
  :aliases

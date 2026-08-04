@@ -59,7 +59,7 @@
             report (and the CLI exit code) fail when a variant's mean for
             that scorer drops below the minimum — evals as a CI gate, not
             just a report."
-  (:require [charred.api :as json]
+  (:require [cheshire.core :as json]
             [clojure.string :as str]
             [clj-llm.core :as llm]
             [clj-llm.config :as config]
@@ -120,7 +120,7 @@
   [text]
   (let [parsed (try
                  (some-> (re-find #"(?s)\{.*\}" (str text))
-                         (json/read-json :key-fn keyword))
+                         (json/parse-string true))
                  (catch Exception _ nil))]
     (if (number? (:score parsed))
       {:score (-> (:score parsed) double (max 0.0) (min 1.0))

@@ -54,7 +54,7 @@ Thrown `ex-info`s carry a `:type` in their ex-data, and these keywords are stabl
 
 **The verb is `generate`, not `chat`.** A zero-shot completion isn't a conversation; a conversation is `generate` over accumulated messages. One verb, one mental model, and the eval system gets to treat every interaction uniformly.
 
-**`java.net.http`, charred, aero, malli, and nothing else.** For a library, transitive dependencies are a tax on every consumer. The JDK's HTTP client does everything needed (including streaming); charred is a fast, zero-dependency JSON codec; aero is tiny; malli is the one deliberate splurge because schemas *are* the compatibility strategy.
+**`java.net.http`, cheshire, aero, malli, and nothing else.** For a library, transitive dependencies are a tax on every consumer. The JDK's HTTP client does everything needed (including streaming); cheshire is babashka's native JSON codec (a thin Jackson wrapper on the JVM, zero-cost under bb); aero is tiny; malli is the one deliberate splurge because schemas *are* the compatibility strategy.
 
 **Evals live in the core, with an extraction seam.** Keeping `clj-llm.eval` in the main artifact is a statement: measurement is not an optional extra. The `:lib/task` indirection doubles as the seam, because the eval harness runs arbitrary task functions and only *defaults* to `clj-llm.core/generate`. If the harness ever deserves a standalone life, it can move without breaking a caller.
 

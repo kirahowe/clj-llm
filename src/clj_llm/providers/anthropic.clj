@@ -8,7 +8,7 @@
     :version        optional anthropic-version header, defaults to 2023-06-01
     :headers        optional map of extra headers (e.g. anthropic-beta)
     :timeout-ms     optional request timeout"
-  (:require [charred.api :as json]
+  (:require [cheshire.core :as json]
             [clojure.string :as str]
             [clj-llm.http :as http]
             [clj-llm.provider :as provider]))
@@ -166,7 +166,7 @@
                            :name (:name b)
                            :input (if (str/blank? (:json b))
                                     {}
-                                    (json/read-json (:json b) :key-fn keyword))}
+                                    (json/parse-string (:json b) true))}
                           b))
                       blocks)]
     (parse-response {:content content
@@ -206,7 +206,7 @@
            http-req
            (fn [state line]
              (if-let [data (http/sse-data line)]
-               (reduce-event state (json/read-json data :key-fn keyword) on-chunk)
+               (reduce-event state (json/parse-string data true) on-chunk)
                state))
            initial-stream-state)
           finalize-stream)

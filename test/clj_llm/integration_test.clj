@@ -2,7 +2,7 @@
   "End-to-end tests over real HTTP against an in-process server standing
   in for each provider — exercises the java.net.http transport, JSON
   encoding, header handling and SSE/NDJSON streaming with no network."
-  (:require [charred.api :as json]
+  (:require [cheshire.core :as json]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing use-fixtures]]
             [clj-llm.core :as llm])
@@ -17,10 +17,10 @@
   {:path (.getPath (.getRequestURI exchange))
    :headers (into {} (map (fn [[k v]] [(str/lower-case k) (vec v)]))
                   (.getRequestHeaders exchange))
-   :body (json/read-json (slurp (.getRequestBody exchange)) :key-fn keyword)})
+   :body (json/parse-string (slurp (.getRequestBody exchange)) true)})
 
 (defn- respond-json [^HttpExchange exchange data]
-  (let [bytes (.getBytes (json/write-json-str data) StandardCharsets/UTF_8)]
+  (let [bytes (.getBytes (json/generate-string data) StandardCharsets/UTF_8)]
     (.add (.getResponseHeaders exchange) "Content-Type" "application/json")
     (.sendResponseHeaders exchange 200 (alength bytes))
     (with-open [out (.getResponseBody exchange)]
@@ -36,7 +36,7 @@
 
 (defn- sse [events]
   (mapcat (fn [event] [(str "event: " (:type event))
-                       (str "data: " (json/write-json-str event))
+                       (str "data: " (json/generate-string event))
                        ""])
           events))
 
@@ -73,14 +73,14 @@
       ;; Ollama native chat (NDJSON stream) and embeddings
       "/ollama/api/chat"
       (respond-lines exchange "application/x-ndjson"
-                     [(json/write-json-str {:model "llama3.2"
-                                            :message {:content "lo"} :done false})
-                      (json/write-json-str {:model "llama3.2"
-                                            :message {:content "cal"} :done false})
-                      (json/write-json-str {:model "llama3.2"
-                                            :message {:content ""}
-                                            :done true :done_reason "stop"
-                                            :prompt_eval_count 4 :eval_count 2})])
+                     [(json/generate-string {:model "llama3.2"
+                                             :message {:content "lo"} :done false})
+                      (json/generate-string {:model "llama3.2"
+                                             :message {:content "cal"} :done false})
+                      (json/generate-string {:model "llama3.2"
+                                             :message {:content ""}
+                                             :done true :done_reason "stop"
+                                             :prompt_eval_count 4 :eval_count 2})])
 
       "/ollama/api/embed"
       (respond-json exchange {:model "nomic-embed-text"
@@ -89,7 +89,7 @@
 
       ;; Error path
       "/broken/v1/messages"
-      (let [bytes (.getBytes (json/write-json-str {:error {:message "bad key"}})
+      (let [bytes (.getBytes (json/generate-string {:error {:message "bad key"}})
                              StandardCharsets/UTF_8)]
         (.sendResponseHeaders exchange 401 (alength bytes))
         (with-open [out (.getResponseBody exchange)]

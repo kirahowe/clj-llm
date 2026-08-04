@@ -20,7 +20,13 @@ All notable changes to this project will be documented in this file. This change
   because it lives in the user's shared system map.
 - **HTTP moved to `java.net.http`** (JDK built-in) — clj-http and its
   Apache HttpClient dependency tree removed; the library's dependencies
-  are now aero, charred and malli only.
+  are now aero, cheshire and malli only.
+- **JSON moved from charred to cheshire**, for babashka compatibility:
+  charred's `deftype` over `java.util.Iterator` cannot load under SCI,
+  which made `(require '[clj-llm.core])` fail under bb outright.
+  cheshire is compiled into babashka natively, so the library now loads
+  and runs under bb as well as the JVM. On the JVM cheshire brings
+  Jackson along — the price of running everywhere.
 - **Streaming chunks are type-tagged**: `:lib/on-chunk` receives
   `{:type :text :text delta}`. Callbacks must ignore unknown types —
   this is how future chunk kinds (tool-call deltas, thinking, ...)
