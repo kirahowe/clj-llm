@@ -14,23 +14,23 @@
 
     ;; zero-shot
     (llm/generate config \"Why is the sky blue?\")
-    ;; => #:lib{:text \"...\" :messages [...] :usage {...} ...}
+    ;; => #:llm{:text \"...\" :messages [...] :usage {...} ...}
 
-    ;; multi-turn is just data — thread :lib/messages back in
+    ;; multi-turn is just data — thread :llm/messages back in
     (let [r1 (llm/generate config \"Name a prime number.\")]
-      (llm/generate config {:lib/messages (conj (:lib/messages r1)
+      (llm/generate config {:llm/messages (conj (:llm/messages r1)
                                                 {:role :user :content \"Why is it prime?\"})}))
 
     ;; streaming — chunks carry a :type so future chunk kinds can be
     ;; introduced without breaking existing callbacks; ignore types you
     ;; don't recognize
     (llm/generate config \"Tell me a story\"
-                  {:lib/on-chunk (fn [{:keys [type text]}]
+                  {:llm/on-chunk (fn [{:keys [type text]}]
                                    (when (= :text type) (print text) (flush)))})
 
     ;; tools — maps with a :fn are executed in an automatic loop
     (llm/generate config \"What's the weather in Berlin?\"
-                  {:lib/tools [{:name \"get-weather\"
+                  {:llm/tools [{:name \"get-weather\"
                                 :description \"Look up current weather for a city\"
                                 :parameters {:type \"object\"
                                              :properties {:city {:type \"string\"}}
@@ -42,7 +42,7 @@
 
   Keyspace: every key the library defines in the maps you author or
   store (config, requests, responses, eval suites) is namespaced
-  :lib/...; unqualified keys and your own namespaced keys in those
+  :llm/...; unqualified keys and your own namespaced keys in those
   maps are yours forever. Messages, tools, tool calls, usage and stream
   chunks are plain-keyed protocol structures whose plain keyspace is
   reserved — see clj-llm.spec for the full schemas."
@@ -68,7 +68,7 @@
 (defn- ->raw-request [prompt-or-request]
   (cond
     (string? prompt-or-request)
-    {:lib/prompt prompt-or-request}
+    {:llm/prompt prompt-or-request}
 
     (map? prompt-or-request)
     prompt-or-request
@@ -76,27 +76,27 @@
     :else
     (throw (ex-info (str "generate takes a prompt string or a request map, got: "
                          (pr-str prompt-or-request))
-                    {:type :lib/invalid-request}))))
+                    {:type :llm/invalid-request}))))
 
 (defn- fold-prompt
-  "Fold :lib/prompt into :lib/messages as the trailing user message, if
+  "Fold :llm/prompt into :llm/messages as the trailing user message, if
   present. Applied after config defaults, the positional argument and
-  opts are all merged, so :lib/prompt always lands after whatever
-  history :lib/messages already carries (vec first — callers may pass
+  opts are all merged, so :llm/prompt always lands after whatever
+  history :llm/messages already carries (vec first — callers may pass
   a list, and conj on a list prepends)."
   [request]
-  (if-let [prompt (:lib/prompt request)]
+  (if-let [prompt (:llm/prompt request)]
     (-> request
-        (dissoc :lib/prompt)
-        (assoc :lib/messages (conj (vec (:lib/messages request))
+        (dissoc :llm/prompt)
+        (assoc :llm/messages (conj (vec (:llm/messages request))
                                    {:role :user :content prompt})))
     request))
 
 (defn- request-defaults
-  "Request-level defaults from config (everything under :lib/defaults
+  "Request-level defaults from config (everything under :llm/defaults
   except the model aliases, which are resolved separately)."
   [config]
-  (dissoc (:lib/defaults config) :lib/model :lib/embedding-model))
+  (dissoc (:llm/defaults config) :llm/model :llm/embedding-model))
 
 ;; ---------------------------------------------------------------------------
 ;; Tool execution loop
@@ -127,24 +127,24 @@
 ;; Interaction records
 ;;
 ;; Every response doubles as an *interaction record*: it carries the fully
-;; resolved :lib/request (replayable — tool :fns removed), :lib/latency-ms,
-;; :lib/started-at and :lib/op alongside the result. Records are the raw
+;; resolved :llm/request (replayable — tool :fns removed), :llm/latency-ms,
+;; :llm/started-at and :llm/op alongside the result. Records are the raw
 ;; material for evals (see clj-llm.eval): collect them from live traffic by
-;; setting :lib/on-interaction under :lib/defaults in config (or per call)
+;; setting :llm/on-interaction under :llm/defaults in config (or per call)
 ;; to a function of one record.
 
 (defn- request-record [request]
-  (cond-> (dissoc request :lib/on-chunk :lib/on-interaction)
-    (:lib/tools request) (update :lib/tools (partial mapv #(dissoc % :fn)))))
+  (cond-> (dissoc request :llm/on-chunk :llm/on-interaction)
+    (:llm/tools request) (update :llm/tools (partial mapv #(dissoc % :fn)))))
 
 (defn- finish-record [response op request started-at start-nanos]
   (let [response (assoc response
-                        :lib/op op
-                        :lib/request (request-record request)
-                        :lib/started-at started-at
-                        :lib/latency-ms (quot (- (System/nanoTime) start-nanos)
+                        :llm/op op
+                        :llm/request (request-record request)
+                        :llm/started-at started-at
+                        :llm/latency-ms (quot (- (System/nanoTime) start-nanos)
                                               1000000))]
-    (when-let [on-interaction (:lib/on-interaction request)]
+    (when-let [on-interaction (:llm/on-interaction request)]
       (try (on-interaction response) (catch Exception _ nil)))
     response))
 
@@ -152,41 +152,41 @@
   "Generate a response from an LLM. Stateless: takes the config and a
   prompt string or request map, returns a response map.
 
-  Request keys (all optional except one of :lib/messages,
-  :lib/prompt):
-    :lib/model       alias keyword, \"provider/model-id\" string, or
-                     #:lib{:provider <name> :model \"id\"} — defaults
-                     to the :lib/model alias under :lib/defaults
-    :lib/messages    the conversation so far (vector of {:role :content})
-    :lib/prompt      appended to :lib/messages as the next user message —
+  Request keys (all optional except one of :llm/messages,
+  :llm/prompt):
+    :llm/model       alias keyword, \"provider/model-id\" string, or
+                     #:llm{:provider <name> :model \"id\"} — defaults
+                     to the :llm/model alias under :llm/defaults
+    :llm/messages    the conversation so far (vector of {:role :content})
+    :llm/prompt      appended to :llm/messages as the next user message —
                      zero-shot shorthand on its own, or a way to continue
-                     a conversation when :lib/messages is also given
-    :lib/system      system prompt
-    :lib/max-tokens, :lib/temperature
-    :lib/tools       tool maps {:name :description :parameters :fn};
+                     a conversation when :llm/messages is also given
+    :llm/system      system prompt
+    :llm/max-tokens, :llm/temperature
+    :llm/tools       tool maps {:name :description :parameters :fn};
                      when every requested tool has a :fn it is invoked
                      and the conversation continues automatically
-                     (bounded by :lib/max-tool-rounds, default 10).
+                     (bounded by :llm/max-tool-rounds, default 10).
                      Tools without :fn are returned to you under
-                     :lib/tool-calls to handle manually.
-    :lib/on-chunk    (fn [{:keys [type text]}]) — called with each
+                     :llm/tool-calls to handle manually.
+    :llm/on-chunk    (fn [{:keys [type text]}]) — called with each
                      streamed chunk; :type is :text today and new types
                      may appear, so ignore chunks you don't recognize.
                      The full response is still returned.
-    :lib/on-interaction  (fn [response]) — called with the finished
+    :llm/on-interaction  (fn [response]) — called with the finished
                      response record; usually set once under
-                     :lib/defaults in config to collect interactions
+                     :llm/defaults in config to collect interactions
                      for evals
-    :lib/options     provider-specific map merged into the wire request
+    :llm/options     provider-specific map merged into the wire request
 
   Unqualified keys and your own namespaced keys are never interpreted by
-  the library and flow through to the :lib/request record untouched.
+  the library and flow through to the :llm/request record untouched.
 
   A third argument merges into the request, so
-  (generate config \"hi\" {:lib/model :fast}) works.
+  (generate config \"hi\" {:llm/model :fast}) works.
 
   Returns:
-    #:lib{:text          the assistant's reply
+    #:llm{:text          the assistant's reply
           :messages      full conversation including the reply (and any
                          tool rounds) — conj your next user message
                          onto this
@@ -196,8 +196,8 @@
           :usage         {:input-tokens n :output-tokens n} summed over rounds
           :finish-reason :stop | :length | :tool-calls | :refusal | ...
           :request       the fully resolved request (replayable; tool
-                         :fns removed) — with :lib/latency-ms,
-                         :lib/started-at and :lib/op this makes
+                         :fns removed) — with :llm/latency-ms,
+                         :llm/started-at and :llm/op this makes
                          every response a complete interaction record
           :latency-ms    wall-clock time for the call (all tool rounds)
           :started-at    java.time.Instant when the call began
@@ -210,21 +210,21 @@
    (let [request (fold-prompt (merge (request-defaults config)
                                      (->raw-request prompt-or-request)
                                      opts))
-         _ (when (empty? (:lib/messages request))
-             (throw (ex-info "Request needs :lib/messages or :lib/prompt"
-                             {:type :lib/invalid-request :request request})))
+         _ (when (empty? (:llm/messages request))
+             (throw (ex-info "Request needs :llm/messages or :llm/prompt"
+                             {:type :llm/invalid-request :request request})))
          request (spec/assert-request! request)
-         {:keys [provider model]} (config/resolve-model config (:lib/model request))
-         request (assoc request :lib/model model)
-         max-rounds (or (:lib/max-tool-rounds request) default-max-tool-rounds)
-         tools (:lib/tools request)
+         {:keys [provider model]} (config/resolve-model config (:llm/model request))
+         request (assoc request :llm/model model)
+         max-rounds (or (:llm/max-tool-rounds request) default-max-tool-rounds)
+         tools (:llm/tools request)
          started-at (java.time.Instant/now)
          start-nanos (System/nanoTime)
-         result (loop [messages (vec (:lib/messages request))
+         result (loop [messages (vec (:llm/messages request))
                        usage nil
                        round 0]
                   (let [response (provider/generate! provider
-                                                     (assoc request :lib/messages messages))
+                                                     (assoc request :llm/messages messages))
                         message (:message response)
                         messages (conj messages message)
                         usage (add-usage usage (:usage response))
@@ -233,45 +233,45 @@
                       (recur (into messages (map #(run-tool tools %)) tool-calls)
                              usage
                              (inc round))
-                      (cond-> #:lib{:text (:content message)
+                      (cond-> #:llm{:text (:content message)
                                     :messages messages
                                     :model (:model response)
                                     :provider (config/provider-name provider)
                                     :usage usage
                                     :finish-reason (:finish-reason response)
                                     :raw (:raw response)}
-                        (seq tool-calls) (assoc :lib/tool-calls tool-calls)))))]
+                        (seq tool-calls) (assoc :llm/tool-calls tool-calls)))))]
      (finish-record result :generate request started-at start-nanos))))
 
 (defn embed
   "Compute embeddings for a string or a sequence of strings. The model
-  defaults to the :lib/embedding-model alias under :lib/defaults in
-  config; override with {:lib/model ...} in opts.
+  defaults to the :llm/embedding-model alias under :llm/defaults in
+  config; override with {:llm/model ...} in opts.
 
-  Returns #:lib{:embeddings [[floats] ...] :model ... :provider ...
-  :usage ...}, plus :lib/embedding (the single vector) when the input
+  Returns #:llm{:embeddings [[floats] ...] :model ... :provider ...
+  :usage ...}, plus :llm/embedding (the single vector) when the input
   was a single string. Like generate, the response doubles as an
-  interaction record (:lib/request, :lib/latency-ms,
-  :lib/started-at, :lib/op :embed) and is passed to the
-  :lib/on-interaction hook (from opts or config :lib/defaults)."
+  interaction record (:llm/request, :llm/latency-ms,
+  :llm/started-at, :llm/op :embed) and is passed to the
+  :llm/on-interaction hook (from opts or config :llm/defaults)."
   ([config input] (embed config input nil))
   ([config input opts]
    (spec/assert-config! config)
-   (let [{:keys [provider model]} (config/resolve-model config (:lib/model opts)
-                                                        :lib/embedding-model)
+   (let [{:keys [provider model]} (config/resolve-model config (:llm/model opts)
+                                                        :llm/embedding-model)
          inputs (if (string? input) [input] (vec input))
          request (spec/assert-embed-request!
-                  (merge (when-let [hook (get-in config [:lib/defaults :lib/on-interaction])]
-                           {:lib/on-interaction hook})
-                         (dissoc opts :lib/model)
-                         {:lib/model model :lib/input inputs}))
+                  (merge (when-let [hook (get-in config [:llm/defaults :llm/on-interaction])]
+                           {:llm/on-interaction hook})
+                         (dissoc opts :llm/model)
+                         {:llm/model model :llm/input inputs}))
          started-at (java.time.Instant/now)
          start-nanos (System/nanoTime)
-         response (provider/embed! provider (dissoc request :lib/on-interaction))
-         result (cond-> #:lib{:embeddings (:embeddings response)
+         response (provider/embed! provider (dissoc request :llm/on-interaction))
+         result (cond-> #:llm{:embeddings (:embeddings response)
                               :model (:model response)
                               :provider (config/provider-name provider)
                               :usage (:usage response)
                               :raw (:raw response)}
-                  (string? input) (assoc :lib/embedding (first (:embeddings response))))]
+                  (string? input) (assoc :llm/embedding (first (:embeddings response))))]
      (finish-record result :embed request started-at start-nanos))))

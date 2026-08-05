@@ -2,27 +2,27 @@
 ;; with `bb eval` or (eval/run config "evals/suite.edn"). Suites are read
 ;; with the same aero reader as config files, so #env/#or/#profile work
 ;; here too.
-#:lib{;; What to test. :lib/input is a prompt; use :lib/messages for full
-      ;; conversations (e.g. records collected via :lib/on-interaction).
+#:llm{;; What to test. :llm/input is a prompt; use :llm/messages for full
+      ;; conversations (e.g. records collected via :llm/on-interaction).
       ;; Unqualified keys on a case are yours — custom scorers can read
       ;; them.
       :cases
-      [#:lib{:id :capital-of-france
+      [#:llm{:id :capital-of-france
              :input "What is the capital of France? Answer with just the city name."
              :expected "Paris"}
-       #:lib{:id :arithmetic
+       #:llm{:id :arithmetic
              :input "What is 17 * 23? Reply with only the number."
              :expected "391"}
-       #:lib{:id :summarize
+       #:llm{:id :summarize
              :input "Summarize in one sentence: The mitochondria is the powerhouse of the cell, converting nutrients into ATP through cellular respiration."
              :expected "mitochondria"}]
 
       ;; What to compare — each variant is a bundle of request settings.
       ;; Benchmark a model change, a prompt change, or both.
       :variants
-      [#:lib{:id :baseline :model :smart}
-       #:lib{:id :fast :model :fast}
-       #:lib{:id :terse :model :smart :system "Answer with the minimum number of words."}]
+      [#:llm{:id :baseline :model :smart}
+       #:llm{:id :fast :model :fast}
+       #:llm{:id :terse :model :smart :system "Answer with the minimum number of words."}]
 
       ;; How to score. Built-ins: :exact-match, :includes, :matches. A
       ;; qualified symbol names a scorer fn in your code. For model-graded

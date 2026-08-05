@@ -5,21 +5,21 @@
   URLs and model names live in config files, never in source, and you
   get aero's full tag set (#env, #or, #profile, #include, #ref, ...):
 
-    #:lib{:providers
-          {:anthropic {:lib/adapter :anthropic
+    #:llm{:providers
+          {:anthropic {:llm/adapter :anthropic
                        :api-key #env ANTHROPIC_API_KEY}}
-          :models {:smart #:lib{:provider :anthropic
+          :models {:smart #:llm{:provider :anthropic
                                 :model \"claude-sonnet-4-6\"}}
-          :defaults #:lib{:model :smart
+          :defaults #:llm{:model :smart
                           :max-tokens #profile {:dev 1024 :default 4096}}}
 
   Providers are *accounts/endpoints* (an Anthropic account, a Groq
-  account, a local Ollama server). The :lib/adapter key selects the
+  account, a local Ollama server). The :llm/adapter key selects the
   wire protocol — see clj-llm.provider; every other key in a provider map
   belongs to that adapter (:api-key, :base-url, ...) and flows through
   untouched. Models are aliases so application code can say :fast or
-  :smart and the vendor mapping lives in config. :lib/defaults are
-  merged into every request; that includes :lib/on-interaction, a hook
+  :smart and the vendor mapping lives in config. :llm/defaults are
+  merged into every request; that includes :llm/on-interaction, a hook
   that receives every response record (see clj-llm.core/generate) — the
   raw material for evals.
 
@@ -42,67 +42,67 @@
   ([s opts] (read-config (java.io.StringReader. s) opts)))
 
 (defn provider-name
-  "The name a provider config was registered under in :lib/providers."
+  "The name a provider config was registered under in :llm/providers."
   [provider-config]
-  (:lib/name provider-config))
+  (:llm/name provider-config))
 
 (defn provider-config
-  "Look up a provider by name, tagging it with :lib/name for error
+  "Look up a provider by name, tagging it with :llm/name for error
   reporting. Throws when the provider is not configured."
   [config provider-name]
-  (if-let [p (get-in config [:lib/providers provider-name])]
-    (assoc p :lib/name provider-name)
+  (if-let [p (get-in config [:llm/providers provider-name])]
+    (assoc p :llm/name provider-name)
     (throw (ex-info (str "No provider named " provider-name " in config. "
                          "Known providers: "
-                         (pr-str (keys (:lib/providers config))))
-                    {:type :lib/config-error
+                         (pr-str (keys (:llm/providers config))))
+                    {:type :llm/config-error
                      :provider provider-name
-                     :known (keys (:lib/providers config))}))))
+                     :known (keys (:llm/providers config))}))))
 
 (defn resolve-model
   "Resolve a model designator into {:provider <provider-config> :model <string>}.
 
   Designators:
-    nil       use the default alias from [:lib/defaults default-key]
-    keyword   an alias defined under :lib/models
+    nil       use the default alias from [:llm/defaults default-key]
+    keyword   an alias defined under :llm/models
     string    \"provider-name/model-id\" — splits on the first slash
-    map       #:lib{:provider <name> :model \"model-id\"} used directly
+    map       #:llm{:provider <name> :model \"model-id\"} used directly
 
-  default-key is :lib/model or :lib/embedding-model (defaults to
-  :lib/model)."
-  ([config designator] (resolve-model config designator :lib/model))
+  default-key is :llm/model or :llm/embedding-model (defaults to
+  :llm/model)."
+  ([config designator] (resolve-model config designator :llm/model))
   ([config designator default-key]
    (cond
      (nil? designator)
-     (if-let [d (get-in config [:lib/defaults default-key])]
+     (if-let [d (get-in config [:llm/defaults default-key])]
        (resolve-model config d default-key)
        (throw (ex-info (str "No model given and no " default-key
-                            " configured under :lib/defaults")
-                       {:type :lib/config-error :default-key default-key})))
+                            " configured under :llm/defaults")
+                       {:type :llm/config-error :default-key default-key})))
 
      (keyword? designator)
-     (if-let [alias-config (get-in config [:lib/models designator])]
+     (if-let [alias-config (get-in config [:llm/models designator])]
        (resolve-model config alias-config default-key)
        (throw (ex-info (str "No model alias " designator " in config. "
                             "Known aliases: "
-                            (pr-str (keys (:lib/models config))))
-                       {:type :lib/config-error
+                            (pr-str (keys (:llm/models config))))
+                       {:type :llm/config-error
                         :alias designator
-                        :known (keys (:lib/models config))})))
+                        :known (keys (:llm/models config))})))
 
      (string? designator)
      (let [i (str/index-of designator "/")]
        (when-not i
          (throw (ex-info (str "String model designators must look like "
                               "\"provider-name/model-id\", got: " designator)
-                         {:type :lib/config-error :designator designator})))
+                         {:type :llm/config-error :designator designator})))
        {:provider (provider-config config (keyword (subs designator 0 i)))
         :model (subs designator (inc i))})
 
      (map? designator)
-     {:provider (provider-config config (:lib/provider designator))
-      :model (:lib/model designator)}
+     {:provider (provider-config config (:llm/provider designator))
+      :model (:llm/model designator)}
 
      :else
      (throw (ex-info (str "Unsupported model designator: " (pr-str designator))
-                     {:type :lib/config-error :designator designator})))))
+                     {:type :llm/config-error :designator designator})))))

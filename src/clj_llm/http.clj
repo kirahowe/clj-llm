@@ -41,21 +41,21 @@
 
 (defn- error! [url status body]
   (throw (ex-info (str "LLM provider returned HTTP " status " for " url)
-                  {:type :lib/http-error
+                  {:type :llm/http-error
                    :status status
                    :url url
                    :body body})))
 
 (defn- network-error! [url e]
   (throw (ex-info (str "Network error calling " url ": " (ex-message e))
-                  {:type :lib/network-error :url url}
+                  {:type :llm/network-error :url url}
                   e)))
 
 (defn post-json
   "POST `body` as JSON to `url`. Returns {:status n :body <parsed JSON,
-  keyword keys>}. Throws ex-info {:type :lib/http-error :status ...
+  keyword keys>}. Throws ex-info {:type :llm/http-error :status ...
   :body ...} on a non-2xx response; network-level failures (connect,
-  timeout, dropped streams) throw {:type :lib/network-error :url ...}
+  timeout, dropped streams) throw {:type :llm/network-error :url ...}
   wrapping the IOException."
   [{:keys [url] :as request}]
   (try
@@ -74,7 +74,7 @@
   the response as it arrives — the streaming transport for both SSE and
   NDJSON. Blank lines are skipped. Returns the final accumulator.
   Throws like `post-json` on a non-2xx response; network-level failures
-  (connect, timeout, dropped streams) throw {:type :lib/network-error
+  (connect, timeout, dropped streams) throw {:type :llm/network-error
   :url ...} wrapping the IOException."
   [{:keys [url] :as request} f init]
   (try

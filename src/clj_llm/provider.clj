@@ -1,6 +1,6 @@
 (ns clj-llm.provider
   "The adapter boundary. An adapter is a set of multimethod
-  implementations dispatching on the :lib/adapter key of a provider
+  implementations dispatching on the :llm/adapter key of a provider
   config map. clj-llm ships adapters for :anthropic, :openai (anything
   speaking the OpenAI chat-completions protocol) and :ollama; add your
   own by requiring this namespace and implementing `-generate!` (and
@@ -25,7 +25,7 @@
   keys flow through untouched) and a normalized request whose
   library-owned keys are namespaced:
 
-    #:lib{:model       \"model-id\"          string, already resolved
+    #:llm{:model       \"model-id\"          string, already resolved
           :messages    [{:role :user :content \"...\"} ...]
           :system      \"...\"               optional system prompt
           :max-tokens  4096                  optional
@@ -80,13 +80,13 @@
 
   - Unqualified keys in provider config maps other than those read by
     the adapter itself will never gain library-level meaning; only
-    :lib/-qualified keys are the library's. One exception: the library
-    injects :lib/name at resolution time, the name the provider was
-    registered under in :lib/providers (handy in adapter error
+    :llm/-qualified keys are the library's. One exception: the library
+    injects :llm/name at resolution time, the name the provider was
+    registered under in :llm/providers (handy in adapter error
     messages).")
 
 (defn- dispatch [provider-config & _]
-  (:lib/adapter provider-config))
+  (:llm/adapter provider-config))
 
 ;; ---------------------------------------------------------------------------
 ;; SPI — adapters implement these; each has exactly one fixed signature
@@ -94,13 +94,13 @@
 (defmulti -generate!
   "SPI: execute one text-generation request against a provider.
   Implement as (-generate! provider-config request opts) for your
-  :lib/adapter keyword; see the namespace docstring for the
+  :llm/adapter keyword; see the namespace docstring for the
   request/result contract. Callers should use `generate!` instead."
   dispatch)
 
 (defmulti -embed!
   "SPI: compute embeddings. Implement as (-embed! provider-config
-  request opts); request is #:lib{:model \"...\" :input [\"text\" ...]
+  request opts); request is #:llm{:model \"...\" :input [\"text\" ...]
   :options {...}} and the result is {:embeddings [[floats] ...]
   :model ... :usage ... :raw ...}. Callers should use `embed!` instead."
   dispatch)
@@ -123,11 +123,11 @@
 
 (defn- unknown-adapter! [provider-config op]
   (throw (ex-info (str "No " op " implementation for adapter "
-                       (pr-str (:lib/adapter provider-config))
+                       (pr-str (:llm/adapter provider-config))
                        ". Built-in adapters (:anthropic, :openai, :ollama) are "
                        "loaded by requiring clj-llm.core.")
-                  {:type :lib/unknown-adapter
-                   :adapter (:lib/adapter provider-config)
+                  {:type :llm/unknown-adapter
+                   :adapter (:llm/adapter provider-config)
                    :op op})))
 
 (defmethod -generate! :default [provider-config _request _opts]
@@ -167,11 +167,11 @@
   ([provider-config opts] (-stop provider-config opts)))
 
 (defn merge-options
-  "Merge a request's :lib/options into an adapter-built wire-format
+  "Merge a request's :llm/options into an adapter-built wire-format
   request body. Non-nil values override what the adapter built; nil
   values remove the key entirely — the escape hatch when an adapter
   injects a default a particular server rejects (e.g.
-  #:lib{:options {:stream_options nil}} for OpenAI-compatible servers
+  #:llm{:options {:stream_options nil}} for OpenAI-compatible servers
   that predate stream_options). Adapters should apply this last, so
   options always win."
   [body options]

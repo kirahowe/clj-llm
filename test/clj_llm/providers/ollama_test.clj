@@ -4,10 +4,10 @@
 
 (deftest build-request-basics
   (let [body (ollama/build-request
-              {:lib/model "llama3.2"
-               :lib/messages [{:role :user :content "hi"}]
-               :lib/max-tokens 64
-               :lib/temperature 0.1})]
+              {:llm/model "llama3.2"
+               :llm/messages [{:role :user :content "hi"}]
+               :llm/max-tokens 64
+               :llm/temperature 0.1})]
     (is (= "llama3.2" (:model body)))
     (is (= [{:role "user" :content "hi"}] (:messages body)))
     (is (false? (:stream body)) "non-streaming must be explicit for Ollama")
@@ -16,26 +16,26 @@
 
 (deftest build-request-streaming
   (let [body (ollama/build-request
-              {:lib/model "llama3.2"
-               :lib/messages [{:role :user :content "hi"}]}
+              {:llm/model "llama3.2"
+               :llm/messages [{:role :user :content "hi"}]}
               {:stream? true})]
     (is (true? (:stream body)))))
 
 (deftest build-request-options-nil-removes-keys
   (let [body (ollama/build-request
-              {:lib/model "llama3.2"
-               :lib/messages [{:role :user :content "hi"}]
-               :lib/temperature 0.1
-               :lib/options {:options nil :keep_alive "5m"}})]
+              {:llm/model "llama3.2"
+               :llm/messages [{:role :user :content "hi"}]
+               :llm/temperature 0.1
+               :llm/options {:options nil :keep_alive "5m"}})]
     (is (= "5m" (:keep_alive body)))
     (is (not (contains? body :options))
-        "nil in :lib/options removes the sampling :options key")))
+        "nil in :llm/options removes the sampling :options key")))
 
 (deftest build-request-system-and-tools
   (let [body (ollama/build-request
-              {:lib/model "m" :lib/system "be brief"
-               :lib/messages [{:role :user :content "hi"}]
-               :lib/tools [{:name "get-weather" :description "d"
+              {:llm/model "m" :llm/system "be brief"
+               :llm/messages [{:role :user :content "hi"}]
+               :llm/tools [{:name "get-weather" :description "d"
                             :parameters {:type "object"}}]})]
     (is (= {:role "system" :content "be brief"} (first (:messages body))))
     (is (= [{:type "function"
@@ -45,18 +45,18 @@
 
 (deftest build-request-system-overrides-inline
   (let [body (ollama/build-request
-              {:lib/model "m" :lib/system "override"
-               :lib/messages [{:role :system :content "inline"}
+              {:llm/model "m" :llm/system "override"
+               :llm/messages [{:role :system :content "inline"}
                               {:role :user :content "hi"}]})]
     (is (= [{:role "system" :content "override"}
             {:role "user" :content "hi"}]
            (:messages body))
-        ":lib/system wins over an inline system message, which is dropped")))
+        ":llm/system wins over an inline system message, which is dropped")))
 
 (deftest tool-conversation-wire-format
   (let [body (ollama/build-request
-              {:lib/model "m"
-               :lib/messages [{:role :user :content "weather?"}
+              {:llm/model "m"
+               :llm/messages [{:role :user :content "weather?"}
                               {:role :assistant :content ""
                                :tool-calls [{:id "call_0" :name "get-weather"
                                              :arguments {:city "Berlin"}}]}

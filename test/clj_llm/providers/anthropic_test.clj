@@ -4,8 +4,8 @@
 
 (deftest build-request-basics
   (let [body (anthropic/build-request
-              {:lib/model "claude-sonnet-4-6"
-               :lib/messages [{:role :user :content "hi"}]})]
+              {:llm/model "claude-sonnet-4-6"
+               :llm/messages [{:role :user :content "hi"}]})]
     (is (= "claude-sonnet-4-6" (:model body)))
     (is (= anthropic/default-max-tokens (:max_tokens body)))
     (is (= [{:role "user" :content "hi"}] (:messages body)))
@@ -13,22 +13,22 @@
     (is (not (contains? body :stream)))))
 
 (deftest build-request-system-handling
-  (testing "explicit :lib/system"
+  (testing "explicit :llm/system"
     (is (= "be brief"
            (:system (anthropic/build-request
-                     {:lib/model "m" :lib/system "be brief"
-                      :lib/messages [{:role :user :content "hi"}]})))))
-  (testing ":system role messages are lifted out of :lib/messages"
+                     {:llm/model "m" :llm/system "be brief"
+                      :llm/messages [{:role :user :content "hi"}]})))))
+  (testing ":system role messages are lifted out of :llm/messages"
     (let [body (anthropic/build-request
-                {:lib/model "m"
-                 :lib/messages [{:role :system :content "be brief"}
+                {:llm/model "m"
+                 :llm/messages [{:role :system :content "be brief"}
                                 {:role :user :content "hi"}]})]
       (is (= "be brief" (:system body)))
       (is (= [{:role "user" :content "hi"}] (:messages body)))))
-  (testing ":lib/system wins over an inline system message"
+  (testing ":llm/system wins over an inline system message"
     (let [body (anthropic/build-request
-                {:lib/model "m" :lib/system "override"
-                 :lib/messages [{:role :system :content "inline"}
+                {:llm/model "m" :llm/system "override"
+                 :llm/messages [{:role :system :content "inline"}
                                 {:role :user :content "hi"}]})]
       (is (= "override" (:system body)))
       (is (= [{:role "user" :content "hi"}] (:messages body))
@@ -36,42 +36,42 @@
 
 (deftest build-request-tools-and-options
   (let [body (anthropic/build-request
-              {:lib/model "m"
-               :lib/messages [{:role :user :content "hi"}]
-               :lib/max-tokens 100
-               :lib/temperature 0.5
-               :lib/tools [{:name "get-weather"
+              {:llm/model "m"
+               :llm/messages [{:role :user :content "hi"}]
+               :llm/max-tokens 100
+               :llm/temperature 0.5
+               :llm/tools [{:name "get-weather"
                             :description "weather lookup"
                             :parameters {:type "object"}}]
-               :lib/options {:top_k 5}})]
+               :llm/options {:top_k 5}})]
     (is (= 100 (:max_tokens body)))
     (is (= 0.5 (:temperature body)))
     (is (= [{:name "get-weather"
              :description "weather lookup"
              :input_schema {:type "object"}}]
            (:tools body)))
-    (is (= 5 (:top_k body)) ":lib/options merge into the wire request")))
+    (is (= 5 (:top_k body)) ":llm/options merge into the wire request")))
 
 (deftest build-request-options-nil-removes-keys
   (let [body (anthropic/build-request
-              {:lib/model "m"
-               :lib/messages [{:role :user :content "hi"}]
-               :lib/options {:max_tokens nil :top_k 5}})]
+              {:llm/model "m"
+               :llm/messages [{:role :user :content "hi"}]
+               :llm/options {:max_tokens nil :top_k 5}})]
     (is (= 5 (:top_k body)))
     (is (not (contains? body :max_tokens))
-        "nil in :lib/options removes a key the adapter always injects")))
+        "nil in :llm/options removes a key the adapter always injects")))
 
 (deftest build-request-streaming
   (let [body (anthropic/build-request
-              {:lib/model "m"
-               :lib/messages [{:role :user :content "hi"}]}
+              {:llm/model "m"
+               :llm/messages [{:role :user :content "hi"}]}
               {:stream? true})]
     (is (true? (:stream body)))))
 
 (deftest tool-conversation-wire-format
   (let [body (anthropic/build-request
-              {:lib/model "m"
-               :lib/messages [{:role :user :content "Weather in Berlin and Paris?"}
+              {:llm/model "m"
+               :llm/messages [{:role :user :content "Weather in Berlin and Paris?"}
                               {:role :assistant :content "Checking."
                                :tool-calls [{:id "t1" :name "get-weather"
                                              :arguments {:city "Berlin"}}

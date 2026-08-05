@@ -6,7 +6,7 @@
   pointing an :openai provider at http://localhost:11434/v1 instead.
 
   Provider config keys (adapter-owned, unqualified by design):
-    :lib/adapter  :ollama
+    :llm/adapter  :ollama
     :base-url       optional, defaults to http://localhost:11434
     :headers        optional map of extra headers
     :timeout-ms     optional request timeout (local models can be slow to
@@ -38,7 +38,7 @@
 (defn build-request
   "Build the wire-format request body (a map ready to be sent as JSON)."
   ([request] (build-request request {}))
-  ([{:lib/keys [model messages system max-tokens temperature tools options]}
+  ([{:llm/keys [model messages system max-tokens temperature tools options]}
     {:keys [stream?]}]
    (let [messages (if system
                     (into [{:role :system :content system}]
@@ -123,7 +123,7 @@
   (or (:base-url provider-config) "http://localhost:11434"))
 
 (defmethod provider/-generate! :ollama
-  [provider-config {:lib/keys [on-chunk] :as request} _opts]
+  [provider-config {:llm/keys [on-chunk] :as request} _opts]
   (let [http-req {:url (str (base-url provider-config) "/api/chat")
                   :headers (:headers provider-config)
                   :timeout-ms (:timeout-ms provider-config)
@@ -138,7 +138,7 @@
       (-> (http/post-json http-req) :body parse-response))))
 
 (defmethod provider/-embed! :ollama
-  [provider-config {:lib/keys [model input options]} _opts]
+  [provider-config {:llm/keys [model input options]} _opts]
   (let [{:keys [body]} (http/post-json
                         {:url (str (base-url provider-config) "/api/embed")
                          :headers (:headers provider-config)

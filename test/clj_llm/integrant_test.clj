@@ -16,7 +16,7 @@
 (def stopped (atom []))
 
 (defmethod provider/-start ::lifecycle [provider-config _opts]
-  (swap! started conj (:lib/adapter provider-config))
+  (swap! started conj (:llm/adapter provider-config))
   (assoc provider-config :token "acquired"))
 
 (defmethod provider/-stop ::lifecycle [provider-config _opts]
@@ -32,10 +32,10 @@
       (reset! stopped [])
       (testing "init resolves inline config and starts providers"
         (let [config (init-key :clj-llm/config
-                               {:config {:lib/providers {:p {:lib/adapter ::lifecycle}}
-                                         :lib/defaults {}}})]
+                               {:config {:llm/providers {:p {:llm/adapter ::lifecycle}}
+                                         :llm/defaults {}}})]
           (is (= [::lifecycle] @started))
-          (is (= "acquired" (get-in config [:lib/providers :p :token]))
+          (is (= "acquired" (get-in config [:llm/providers :p :token]))
               "start's return value replaces the provider config")
           (testing "halt stops providers"
             (halt-key! :clj-llm/config config)
@@ -44,13 +44,13 @@
         (let [dir (java.nio.file.Files/createTempDirectory
                    "clj-llm-test" (make-array java.nio.file.attribute.FileAttribute 0))
               file (str dir "/llm.edn")]
-          (spit file "{:lib/providers {:a {:lib/adapter :anthropic
+          (spit file "{:llm/providers {:a {:llm/adapter :anthropic
                                              :api-key #env \"NOT_SET_ANYWHERE\"}}
-                       :lib/defaults {:lib/max-tokens #profile {:dev 1 :default 2}}}")
+                       :llm/defaults {:llm/max-tokens #profile {:dev 1 :default 2}}}")
           (let [config (init-key :clj-llm/config
                                  {:path file :profile :dev})]
-            (is (= 1 (get-in config [:lib/defaults :lib/max-tokens])))
-            (is (nil? (get-in config [:lib/providers :a :api-key]))))))
+            (is (= 1 (get-in config [:llm/defaults :llm/max-tokens])))
+            (is (nil? (get-in config [:llm/providers :a :api-key]))))))
       (testing "init throws without a config source"
         (is (thrown-with-msg? Exception #":path, :resource or :config"
                               (init-key :clj-llm/config {})))))))

@@ -8,7 +8,7 @@
 
   - Keys in maps that users author, store or extend — config, requests,
     responses/records, cases, variants, suites, reports — are namespaced
-    :lib/... Any key that is not :lib/-qualified in those maps is
+    :llm/... Any key that is not :llm/-qualified in those maps is
     yours, forever: the library will never assign meaning to it.
 
   - Protocol structures the library defines end-to-end — messages, tool
@@ -76,46 +76,46 @@
 (def ModelDesignator
   (m/schema
    [:or :keyword :string
-    [:map [:lib/provider :keyword] [:lib/model :string]]]))
+    [:map [:llm/provider :keyword] [:llm/model :string]]]))
 
 (def ProviderConfig
-  (m/schema [:map [:lib/adapter :keyword]]))
+  (m/schema [:map [:llm/adapter :keyword]]))
 
 (def Config
   (m/schema
    [:map
-    [:lib/providers [:map-of :keyword [:map [:lib/adapter :keyword]]]]
-    [:lib/models {:optional true}
+    [:llm/providers [:map-of :keyword [:map [:llm/adapter :keyword]]]]
+    [:llm/models {:optional true}
      [:map-of :keyword [:or :keyword :string
-                        [:map [:lib/provider :keyword] [:lib/model :string]]]]]
-    [:lib/defaults {:optional true} :map]]))
+                        [:map [:llm/provider :keyword] [:llm/model :string]]]]]
+    [:llm/defaults {:optional true} :map]]))
 
 ;; ---------------------------------------------------------------------------
 ;; Requests and responses
 
 (def Request
-  "A generate request after normalization (prompt string / :lib/prompt
-  already folded into :lib/messages)."
+  "A generate request after normalization (prompt string / :llm/prompt
+  already folded into :llm/messages)."
   (m/schema
    [:map
-    [:lib/messages [:sequential Message]]
-    [:lib/model {:optional true} ModelDesignator]
-    [:lib/system {:optional true} [:maybe :string]]
-    [:lib/max-tokens {:optional true} pos-int?]
-    [:lib/temperature {:optional true} number?]
-    [:lib/tools {:optional true} [:sequential Tool]]
-    [:lib/max-tool-rounds {:optional true} pos-int?]
-    [:lib/on-chunk {:optional true} fn?]
-    [:lib/on-interaction {:optional true} fn?]
-    [:lib/options {:optional true} :map]]))
+    [:llm/messages [:sequential Message]]
+    [:llm/model {:optional true} ModelDesignator]
+    [:llm/system {:optional true} [:maybe :string]]
+    [:llm/max-tokens {:optional true} pos-int?]
+    [:llm/temperature {:optional true} number?]
+    [:llm/tools {:optional true} [:sequential Tool]]
+    [:llm/max-tool-rounds {:optional true} pos-int?]
+    [:llm/on-chunk {:optional true} fn?]
+    [:llm/on-interaction {:optional true} fn?]
+    [:llm/options {:optional true} :map]]))
 
 (def EmbedRequest
   (m/schema
    [:map
-    [:lib/model {:optional true} ModelDesignator]
-    [:lib/input [:sequential :string]]
-    [:lib/on-interaction {:optional true} fn?]
-    [:lib/options {:optional true} :map]]))
+    [:llm/model {:optional true} ModelDesignator]
+    [:llm/input [:sequential :string]]
+    [:llm/on-interaction {:optional true} fn?]
+    [:llm/options {:optional true} :map]]))
 
 (def Response
   "What generate/embed return — every response doubles as a replayable
@@ -123,20 +123,20 @@
   the library and not validated at runtime."
   (m/schema
    [:map
-    [:lib/text {:optional true} [:maybe :string]]
-    [:lib/messages {:optional true} [:sequential Message]]
-    [:lib/tool-calls {:optional true} [:sequential ToolCall]]
-    [:lib/model {:optional true} [:maybe :string]]
-    [:lib/provider {:optional true} :keyword]
-    [:lib/usage {:optional true} [:maybe Usage]]
-    [:lib/finish-reason {:optional true} [:maybe :keyword]]
-    [:lib/request {:optional true} :map]
-    [:lib/latency-ms {:optional true} number?]
-    [:lib/started-at {:optional true} inst?]
-    [:lib/op {:optional true} :keyword]
-    [:lib/raw {:optional true} :any]
-    [:lib/embedding {:optional true} [:sequential number?]]
-    [:lib/embeddings {:optional true} [:sequential [:sequential number?]]]]))
+    [:llm/text {:optional true} [:maybe :string]]
+    [:llm/messages {:optional true} [:sequential Message]]
+    [:llm/tool-calls {:optional true} [:sequential ToolCall]]
+    [:llm/model {:optional true} [:maybe :string]]
+    [:llm/provider {:optional true} :keyword]
+    [:llm/usage {:optional true} [:maybe Usage]]
+    [:llm/finish-reason {:optional true} [:maybe :keyword]]
+    [:llm/request {:optional true} :map]
+    [:llm/latency-ms {:optional true} number?]
+    [:llm/started-at {:optional true} inst?]
+    [:llm/op {:optional true} :keyword]
+    [:llm/raw {:optional true} :any]
+    [:llm/embedding {:optional true} [:sequential number?]]
+    [:llm/embeddings {:optional true} [:sequential [:sequential number?]]]]))
 
 ;; ---------------------------------------------------------------------------
 ;; Eval suites
@@ -145,34 +145,34 @@
   (m/schema
    [:and
     [:map
-     [:lib/id {:optional true} :keyword]
-     [:lib/input {:optional true} :string]
-     [:lib/messages {:optional true} [:sequential Message]]
-     [:lib/expected {:optional true} :any]]
-    [:fn {:error/message "needs :lib/input or :lib/messages"}
-     (fn [{:lib/keys [input messages]}]
+     [:llm/id {:optional true} :keyword]
+     [:llm/input {:optional true} :string]
+     [:llm/messages {:optional true} [:sequential Message]]
+     [:llm/expected {:optional true} :any]]
+    [:fn {:error/message "needs :llm/input or :llm/messages"}
+     (fn [{:llm/keys [input messages]}]
        (boolean (or input messages)))]]))
 
 (def Variant
-  "A variant is :lib/id plus any generate request keys; extra
+  "A variant is :llm/id plus any generate request keys; extra
   (non-lib) keys are yours and flow through to scorers."
-  (m/schema [:map [:lib/id {:optional true} :keyword]]))
+  (m/schema [:map [:llm/id {:optional true} :keyword]]))
 
 (def Scorer
   "A scorer designator: a built-in's keyword, a function, a qualified
-  symbol resolving to either, or a map of :lib/id and :lib/fn."
+  symbol resolving to either, or a map of :llm/id and :llm/fn."
   (m/schema
    [:or :keyword fn? qualified-symbol?
-    [:map [:lib/id :keyword] [:lib/fn fn?]]]))
+    [:map [:llm/id :keyword] [:llm/fn fn?]]]))
 
 (def Suite
   (m/schema
    [:map
-    [:lib/cases [:sequential Case]]
-    [:lib/variants {:optional true} [:sequential Variant]]
-    [:lib/scorers {:optional true} [:sequential Scorer]]
-    [:lib/task {:optional true} [:or fn? qualified-symbol?]]
-    [:lib/thresholds {:optional true} [:map-of :keyword number?]]]))
+    [:llm/cases [:sequential Case]]
+    [:llm/variants {:optional true} [:sequential Variant]]
+    [:llm/scorers {:optional true} [:sequential Scorer]]
+    [:llm/task {:optional true} [:or fn? qualified-symbol?]]
+    [:llm/thresholds {:optional true} [:map-of :keyword number?]]]))
 
 ;; ---------------------------------------------------------------------------
 ;; Validation
@@ -189,13 +189,13 @@
                        :explain explanation})))))
 
 (defn assert-config! [config]
-  (assert! Config config :lib/invalid-config "Invalid clj-llm config"))
+  (assert! Config config :llm/invalid-config "Invalid clj-llm config"))
 
 (defn assert-request! [request]
-  (assert! Request request :lib/invalid-request "Invalid request"))
+  (assert! Request request :llm/invalid-request "Invalid request"))
 
 (defn assert-embed-request! [request]
-  (assert! EmbedRequest request :lib/invalid-request "Invalid embed request"))
+  (assert! EmbedRequest request :llm/invalid-request "Invalid embed request"))
 
 (defn assert-suite! [suite]
-  (assert! Suite suite :lib/invalid-suite "Invalid eval suite"))
+  (assert! Suite suite :llm/invalid-suite "Invalid eval suite"))

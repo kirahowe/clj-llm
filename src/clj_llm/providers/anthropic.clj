@@ -2,7 +2,7 @@
   "Adapter for the Anthropic Messages API (api.anthropic.com/v1/messages).
 
   Provider config keys (adapter-owned, unqualified by design):
-    :lib/adapter  :anthropic
+    :llm/adapter  :anthropic
     :api-key        required — usually #env ANTHROPIC_API_KEY
     :base-url       optional, defaults to https://api.anthropic.com
     :version        optional anthropic-version header, defaults to 2023-06-01
@@ -63,7 +63,7 @@
 (defn build-request
   "Build the wire-format request body (a map ready to be sent as JSON)."
   ([request] (build-request request {}))
-  ([{:lib/keys [model messages system max-tokens temperature tools options]}
+  ([{:llm/keys [model messages system max-tokens temperature tools options]}
     {:keys [stream?]}]
    (let [system (or system
                     (some #(when (= :system (:role %)) (:content %)) messages))]
@@ -151,7 +151,7 @@
     "error"
     (throw (ex-info (str "Anthropic stream error: "
                          (get-in event [:error :message]))
-                    {:type :lib/stream-error :event event}))
+                    {:type :llm/stream-error :event event}))
 
     state))
 
@@ -180,11 +180,11 @@
 
 (defn- api-key! [provider-config]
   (or (:api-key provider-config)
-      (throw (ex-info (str "Provider " (or (:lib/name provider-config)
+      (throw (ex-info (str "Provider " (or (:llm/name provider-config)
                                            ":anthropic")
                            " has no :api-key. Set it in your config file, e.g. "
                            ":api-key #env ANTHROPIC_API_KEY")
-                      {:type :lib/missing-api-key}))))
+                      {:type :llm/missing-api-key}))))
 
 (defn- endpoint [provider-config]
   (str (or (:base-url provider-config) "https://api.anthropic.com")
@@ -196,7 +196,7 @@
          (:headers provider-config)))
 
 (defmethod provider/-generate! :anthropic
-  [provider-config {:lib/keys [on-chunk] :as request} _opts]
+  [provider-config {:llm/keys [on-chunk] :as request} _opts]
   (let [http-req {:url (endpoint provider-config)
                   :headers (headers provider-config)
                   :timeout-ms (:timeout-ms provider-config)
@@ -216,5 +216,5 @@
   [provider-config _request _opts]
   (throw (ex-info (str "Anthropic has no embeddings API. Configure an :openai "
                        "or :ollama provider for embeddings.")
-                  {:type :lib/unsupported
-                   :provider (:lib/name provider-config)})))
+                  {:type :llm/unsupported
+                   :provider (:llm/name provider-config)})))

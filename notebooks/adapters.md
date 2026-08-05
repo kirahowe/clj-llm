@@ -1,6 +1,6 @@
 # Writing a provider adapter
 
-The three built-in adapters cover Anthropic, everything that speaks the OpenAI chat-completions protocol, and Ollama's native API. If you need another wire protocol (a niche provider, an internal gateway, a test double), an adapter is a page of code: multimethod implementations dispatching on the `:lib/adapter` key of a provider config map.
+The three built-in adapters cover Anthropic, everything that speaks the OpenAI chat-completions protocol, and Ollama's native API. If you need another wire protocol (a niche provider, an internal gateway, a test double), an adapter is a page of code: multimethod implementations dispatching on the `:llm/adapter` key of a provider config map.
 
 ## The minimum viable adapter
 
@@ -15,10 +15,10 @@ The three built-in adapters cover Anthropic, everything that speaks the OpenAI c
                         {:url (str (:base-url provider-config) "/complete")
                          :headers {"authorization" (str "Bearer " (:api-key provider-config))}
                          :timeout-ms (:timeout-ms provider-config)
-                         :body {:model (:lib/model request)
+                         :body {:model (:llm/model request)
                                 :messages (mapv (fn [{:keys [role content]}]
                                                   {:role (name role) :content content})
-                                                (:lib/messages request))}})]
+                                                (:llm/messages request))}})]
     {:message {:role :assistant :content (:completion body)}
      :model (:model body)
      :usage {:input-tokens (:prompt_tokens body)
@@ -30,7 +30,7 @@ The three built-in adapters cover Anthropic, everything that speaks the OpenAI c
 Register it in config like any built-in:
 
 ```clojure
-#:lib{:providers {:acme {:lib/adapter :acme
+#:llm{:providers {:acme {:llm/adapter :acme
                          :base-url "https://api.acme.example"
                          :api-key #env ACME_API_KEY}}}
 ```
@@ -42,7 +42,7 @@ That's the whole job: `generate` resolves the provider, applies defaults, runs t
 `clj-llm.provider` splits into an SPI and an API, the same shape as Integrant's `init-key`/`init`: you *implement* the `-`-prefixed multimethods, and code *calls* the unprefixed functions (`provider/generate!` etc.), where the trailing `opts` map is optional. Your `-generate!` receives three arguments: the raw provider config (so your own keys like `:api-key` flow through untouched), the normalized request, and a reserved `opts` map (empty today; accept and ignore it):
 
 ```clojure
-#:lib{:model       "model-id"         ; already resolved to a string
+#:llm{:model       "model-id"         ; already resolved to a string
       :messages    [{:role :user :content "..."} ...]
       :system      "..."              ; optional
       :max-tokens  4096               ; optional
@@ -64,9 +64,9 @@ And returns:
 
 Conventions the built-ins follow, worth copying:
 
-- **Honor `:lib/options` by applying it to the wire body last**, via `provider/merge-options`: non-nil values override what you built, nil values remove the key. It's the user's escape hatch both for anything your adapter doesn't model and for any default you inject that some server rejects.
-- **Streaming**: when `:lib/on-chunk` is present, call it with `{:type :text :text delta}` per text delta and still return the complete result. `clj-llm.http/post-json-lines` reduces over response lines (SSE and NDJSON both), and `clj-llm.http/sse-data` extracts SSE data payloads.
-- **Errors**: let `clj-llm.http`'s `:lib/http-error` and `:lib/network-error` propagate; throw `ex-info` with `{:type :lib/missing-api-key}` for configuration problems you detect yourself. The provider config carries `:lib/name` (the name it was registered under), which makes error messages point at the right config entry.
+- **Honor `:llm/options` by applying it to the wire body last**, via `provider/merge-options`: non-nil values override what you built, nil values remove the key. It's the user's escape hatch both for anything your adapter doesn't model and for any default you inject that some server rejects.
+- **Streaming**: when `:llm/on-chunk` is present, call it with `{:type :text :text delta}` per text delta and still return the complete result. `clj-llm.http/post-json-lines` reduces over response lines (SSE and NDJSON both), and `clj-llm.http/sse-data` extracts SSE data payloads.
+- **Errors**: let `clj-llm.http`'s `:llm/http-error` and `:llm/network-error` propagate; throw `ex-info` with `{:type :llm/missing-api-key}` for configuration problems you detect yourself. The provider config carries `:llm/name` (the name it was registered under), which makes error messages point at the right config entry.
 - **Structure for testability**: keep pure `build-request` / `parse-response` functions separate from the multimethod, so your adapter tests need no HTTP at all. See `clj-llm.providers.ollama` for the compact reference implementation, and `book.demo` in this book's source for a no-HTTP test double.
 - **Embeddings, lifecycle**: implement `-embed!` if the provider has embeddings; implement `-start`/`-stop` (each `[provider-config opts]`) only if your adapter needs real state like OAuth token refresh. The integrant bindings call them on system start/halt.
 

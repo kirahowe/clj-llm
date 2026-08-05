@@ -30,13 +30,13 @@
       (is (= {:max-tokens 4096} (config/read-config-string s {:profile :prod}))))))
 
 (def test-config
-  #:lib{:providers {:acme {:lib/adapter :openai
+  #:llm{:providers {:acme {:llm/adapter :openai
                            :base-url "https://llm.acme.test/v1"
                            :api-key "k"}
-                    :local {:lib/adapter :ollama}}
-        :models {:smart #:lib{:provider :acme :model "acme-large"}
-                 :embeddings #:lib{:provider :local :model "nomic-embed-text"}}
-        :defaults #:lib{:model :smart
+                    :local {:llm/adapter :ollama}}
+        :models {:smart #:llm{:provider :acme :model "acme-large"}
+                 :embeddings #:llm{:provider :local :model "nomic-embed-text"}}
+        :defaults #:llm{:model :smart
                         :embedding-model :embeddings
                         :max-tokens 512}})
 
@@ -44,7 +44,7 @@
   (testing "nil designator uses the configured default alias"
     (let [{:keys [provider model]} (config/resolve-model test-config nil)]
       (is (= "acme-large" model))
-      (is (= :openai (:lib/adapter provider)))
+      (is (= :openai (:llm/adapter provider)))
       (is (= :acme (config/provider-name provider)))))
 
   (testing "keyword designator resolves an alias"
@@ -60,17 +60,17 @@
   (testing "map designator is used directly"
     (is (= "whatever"
            (:model (config/resolve-model test-config
-                                         #:lib{:provider :local :model "whatever"})))))
+                                         #:llm{:provider :local :model "whatever"})))))
 
   (testing "embedding default key"
     (is (= "nomic-embed-text"
-           (:model (config/resolve-model test-config nil :lib/embedding-model)))))
+           (:model (config/resolve-model test-config nil :llm/embedding-model)))))
 
   (testing "helpful errors"
     (is (thrown-with-msg? Exception #"No model alias"
                           (config/resolve-model test-config :nope)))
     (is (thrown-with-msg? Exception #"No provider named"
                           (config/resolve-model test-config
-                                                #:lib{:provider :nope :model "x"})))
+                                                #:llm{:provider :nope :model "x"})))
     (is (thrown-with-msg? Exception #"No model given"
                           (config/resolve-model {} nil)))))

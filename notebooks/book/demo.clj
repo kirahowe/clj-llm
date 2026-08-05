@@ -19,18 +19,18 @@
   (:content (last (filter #(= :user (:role %)) messages))))
 
 (defn- wants-tool? [request]
-  (and (seq (:lib/tools request))
-       (re-find #"(?i)weather" (str (last-user-text (:lib/messages request))))
-       (not-any? #(= :tool (:role %)) (:lib/messages request))))
+  (and (seq (:llm/tools request))
+       (re-find #"(?i)weather" (str (last-user-text (:llm/messages request))))
+       (not-any? #(= :tool (:role %)) (:llm/messages request))))
 
 (defn- respond [request text]
-  (let [on-chunk (:lib/on-chunk request)
-        words (count (str/split (str (last-user-text (:lib/messages request))) #"\s+"))]
+  (let [on-chunk (:llm/on-chunk request)
+        words (count (str/split (str (last-user-text (:llm/messages request))) #"\s+"))]
     (when on-chunk
       (doseq [piece (partition-all 12 text)]
         (on-chunk {:type :text :text (apply str piece)})))
     {:message {:role :assistant :content text}
-     :model (:lib/model request)
+     :model (:llm/model request)
      :usage {:input-tokens (+ 8 words) :output-tokens (count (str/split text #"\s+"))}
      :finish-reason :stop
      :raw {:demo true}}))
@@ -43,27 +43,27 @@
                :tool-calls [{:id "call_0"
                              :name "get-weather"
                              :arguments {:city "Berlin"}}]}
-     :model (:lib/model request)
+     :model (:llm/model request)
      :usage {:input-tokens 21 :output-tokens 9}
      :finish-reason :tool-calls
      :raw {:demo true}}
-    (if-let [tool-result (:content (last (filter #(= :tool (:role %)) (:lib/messages request))))]
+    (if-let [tool-result (:content (last (filter #(= :tool (:role %)) (:llm/messages request))))]
       (respond request (str "According to the tool, conditions are: " tool-result))
-      (respond request (canned-answer (last-user-text (:lib/messages request)))))))
+      (respond request (canned-answer (last-user-text (:llm/messages request)))))))
 
 (defmethod provider/-embed! :demo
   [_provider-config request _opts]
   (let [embed (fn [s] (mapv #(/ (double (mod (hash [s %]) 1000)) 1000.0) (range 4)))]
-    {:embeddings (mapv embed (:lib/input request))
-     :model (:lib/model request)
-     :usage {:input-tokens (reduce + (map #(count (str/split % #"\s+")) (:lib/input request)))}
+    {:embeddings (mapv embed (:llm/input request))
+     :model (:llm/model request)
+     :usage {:input-tokens (reduce + (map #(count (str/split % #"\s+")) (:llm/input request)))}
      :raw {:demo true}}))
 
 (def config
   "A config shaped exactly like a real one, pointing at the :demo adapter. Swap this for (llm/read-config \"llm.edn\") and every example in the book runs against your real providers."
-  #:lib{:providers {:demo {:lib/adapter :demo}}
-        :models {:smart #:lib{:provider :demo :model "demo-smart-1"}
-                 :fast #:lib{:provider :demo :model "demo-fast-1"}
-                 :embeddings #:lib{:provider :demo :model "demo-embed-1"}}
-        :defaults #:lib{:model :smart
+  #:llm{:providers {:demo {:llm/adapter :demo}}
+        :models {:smart #:llm{:provider :demo :model "demo-smart-1"}
+                 :fast #:llm{:provider :demo :model "demo-fast-1"}
+                 :embeddings #:llm{:provider :demo :model "demo-embed-1"}}
+        :defaults #:llm{:model :smart
                         :embedding-model :embeddings}})

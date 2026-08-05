@@ -6,11 +6,11 @@
   exercise:
 
   1. Every clj-llm.core/generate response is already a complete
-     interaction record (:lib/request, :lib/usage, :lib/latency-ms,
-     ...). Set :lib/on-interaction under :lib/defaults in config to
+     interaction record (:llm/request, :llm/usage, :llm/latency-ms,
+     ...). Set :llm/on-interaction under :llm/defaults in config to
      collect records from live traffic — collected records replay
      directly as eval cases, since a case accepts the same
-     :lib/messages a record carries.
+     :llm/messages a record carries.
   2. This namespace runs suites: cases × variants → scored results plus
      a per-variant summary, so changing a model or prompt becomes a
      benchmarked decision instead of a vibe.
@@ -18,27 +18,27 @@
   A suite is plain data — inline, or an EDN file read with the same
   aero reader as config files:
 
-    #:lib{:cases    [#:lib{:id :capital
+    #:llm{:cases    [#:llm{:id :capital
                                :input \"What is the capital of France?\"
                                :expected \"Paris\"}]
-            :variants [#:lib{:id :baseline :model :smart}
-                       #:lib{:id :cheap :model :fast :system \"Answer in one word.\"}]
+            :variants [#:llm{:id :baseline :model :smart}
+                       #:llm{:id :cheap :model :fast :system \"Answer in one word.\"}]
             :scorers  [:includes]}
 
     (eval/run config \"evals/suite.edn\")
-    ;; => #:lib{:results [...] :summary {:by-variant {...}}
+    ;; => #:llm{:results [...] :summary {:by-variant {...}}
     ;;            :run-at #inst \"...\" :passed? true}
 
-  Cases:    :lib/id, plus :lib/input (a prompt string) or
-            :lib/messages (a full conversation), optional
-            :lib/expected (whatever your scorers need), and any custom
+  Cases:    :llm/id, plus :llm/input (a prompt string) or
+            :llm/messages (a full conversation), optional
+            :llm/expected (whatever your scorers need), and any custom
             keys your scorers read — unqualified and your-namespaced
             keys are yours.
-  Variants: :lib/id plus any generate request keys (:lib/model,
-            :lib/system, :lib/temperature, :lib/tools, ...) — a
+  Variants: :llm/id plus any generate request keys (:llm/model,
+            :llm/system, :llm/temperature, :llm/tools, ...) — a
             variant IS the thing you are comparing.
   Scorers:  keywords naming built-ins (:exact-match, :includes,
-            :matches), maps #:lib{:id kw :fn f}, bare fns, or
+            :matches), maps #:llm{:id kw :fn f}, bare fns, or
             qualified symbols (resolved with requiring-resolve, so EDN
             suites can name scorers defined in your code). A scorer
             receives {:config ... :case ... :variant ... :response ...}
@@ -46,16 +46,16 @@
             worth keeping (e.g. :reasoning). Use (llm-judge {...}) for
             model-graded scoring — the sensible default when there is no
             mechanical ground truth.
-  Task:     :lib/task (a fn or qualified symbol) is what a case×variant
+  Task:     :llm/task (a fn or qualified symbol) is what a case×variant
             actually runs — (fn [{:keys [config case variant]}]) returning
             a response map. The default task builds a request from the
             case and variant and calls clj-llm.core/generate, which evals a
             single LLM call. Supply your own task to eval any system
             *containing* LLM calls — a RAG pipeline, an agent loop, a
             whole handler — as long as it returns a map your scorers can
-            read (conventionally at least :lib/text; return real
+            read (conventionally at least :llm/text; return real
             generate responses and latency/usage summaries stay accurate).
-  Thresholds: :lib/thresholds {scorer-id min-mean-score} makes the
+  Thresholds: :llm/thresholds {scorer-id min-mean-score} makes the
             report (and the CLI exit code) fail when any variant's mean
             for that scorer drops below the minimum — evals as a CI
             gate, not just a report. Because every variant must clear
@@ -72,31 +72,31 @@
 ;; Built-in scorers
 
 (defn exact-match
-  "1.0 when the trimmed response text equals the trimmed :lib/expected."
+  "1.0 when the trimmed response text equals the trimmed :llm/expected."
   [{:keys [case response]}]
-  {:score (if (= (str/trim (str (:lib/expected case)))
-                 (str/trim (str (:lib/text response))))
+  {:score (if (= (str/trim (str (:llm/expected case)))
+                 (str/trim (str (:llm/text response))))
             1.0 0.0)})
 
 (defn includes
-  "1.0 when the response text contains :lib/expected (case-insensitive)."
+  "1.0 when the response text contains :llm/expected (case-insensitive)."
   [{:keys [case response]}]
-  {:score (if (str/includes? (str/lower-case (str (:lib/text response)))
-                             (str/lower-case (str (:lib/expected case))))
+  {:score (if (str/includes? (str/lower-case (str (:llm/text response)))
+                             (str/lower-case (str (:llm/expected case))))
             1.0 0.0)})
 
 (defn matches
-  "1.0 when the regex :lib/expected (string or pattern) matches the
+  "1.0 when the regex :llm/expected (string or pattern) matches the
   response text."
   [{:keys [case response]}]
-  (let [pattern (let [e (:lib/expected case)]
+  (let [pattern (let [e (:llm/expected case)]
                   (if (instance? java.util.regex.Pattern e) e (re-pattern (str e))))]
-    {:score (if (re-find pattern (str (:lib/text response))) 1.0 0.0)}))
+    {:score (if (re-find pattern (str (:llm/text response))) 1.0 0.0)}))
 
 (def built-in-scorers
-  {:exact-match #:lib{:id :exact-match :fn exact-match}
-   :includes #:lib{:id :includes :fn includes}
-   :matches #:lib{:id :matches :fn matches}})
+  {:exact-match #:llm{:id :exact-match :fn exact-match}
+   :includes #:llm{:id :includes :fn includes}
+   :matches #:llm{:id :matches :fn matches}})
 
 ;; ---------------------------------------------------------------------------
 ;; Model-graded scoring
@@ -110,11 +110,11 @@
 (defn- judge-prompt [criteria case response]
   (str "Evaluate the RESPONSE below.\n\n"
        "Criteria: " criteria "\n\n"
-       (when-let [input (:lib/input case)]
+       (when-let [input (:llm/input case)]
          (str "Task given to the model:\n" input "\n\n"))
-       (when (some? (:lib/expected case))
-         (str "Reference answer:\n" (:lib/expected case) "\n\n"))
-       "RESPONSE:\n" (:lib/text response)))
+       (when (some? (:llm/expected case))
+         (str "Reference answer:\n" (:llm/expected case) "\n\n"))
+       "RESPONSE:\n" (:llm/text response)))
 
 (defn parse-judge-reply
   "Extract {:score <0.0-1.0> :reasoning ...} from a judge's reply,
@@ -137,13 +137,13 @@
   names the scorer in results (default :llm-judge; give each judge its
   own :id when a suite uses several)."
   [{:keys [model criteria id] :or {id :llm-judge}}]
-  #:lib{:id id
+  #:llm{:id id
         :fn (fn [{:keys [config case response]}]
               (let [reply (llm/generate config
-                                        (cond-> #:lib{:system judge-system-prompt
+                                        (cond-> #:llm{:system judge-system-prompt
                                                       :prompt (judge-prompt criteria case response)}
-                                          model (assoc :lib/model model)))]
-                (parse-judge-reply (:lib/text reply))))})
+                                          model (assoc :llm/model model)))]
+                (parse-judge-reply (:llm/text reply))))})
 
 ;; ---------------------------------------------------------------------------
 ;; Running suites
@@ -161,57 +161,57 @@
     (or (built-in-scorers scorer)
         (throw (ex-info (str "Unknown built-in scorer " scorer ". Known: "
                              (pr-str (keys built-in-scorers)))
-                        {:type :lib/unknown-scorer :scorer scorer})))
+                        {:type :llm/unknown-scorer :scorer scorer})))
 
     (qualified-symbol? scorer)
-    (normalize-scorer i (resolve-symbol scorer :lib/unknown-scorer))
+    (normalize-scorer i (resolve-symbol scorer :llm/unknown-scorer))
 
     (map? scorer) scorer
-    (fn? scorer) #:lib{:id (keyword (str "scorer-" i)) :fn scorer}
+    (fn? scorer) #:llm{:id (keyword (str "scorer-" i)) :fn scorer}
     :else (throw (ex-info (str "Unsupported scorer: " (pr-str scorer))
-                          {:type :lib/unknown-scorer :scorer scorer}))))
+                          {:type :llm/unknown-scorer :scorer scorer}))))
 
 (defn case->request
   "The request the default task runs for a case × variant: the case's
   conversation with the variant's request keys merged in."
   [case variant]
   (merge (cond
-           (:lib/messages case) {:lib/messages (:lib/messages case)}
-           (:lib/input case) {:lib/messages [{:role :user
-                                              :content (:lib/input case)}]}
-           :else (throw (ex-info (str "Case " (:lib/id case)
-                                      " needs :lib/input or :lib/messages")
-                                 {:type :lib/invalid-case :case case})))
-         (dissoc variant :lib/id)))
+           (:llm/messages case) {:llm/messages (:llm/messages case)}
+           (:llm/input case) {:llm/messages [{:role :user
+                                              :content (:llm/input case)}]}
+           :else (throw (ex-info (str "Case " (:llm/id case)
+                                      " needs :llm/input or :llm/messages")
+                                 {:type :llm/invalid-case :case case})))
+         (dissoc variant :llm/id)))
 
 (defn- default-task [{:keys [config case variant]}]
   (llm/generate config (case->request case variant)))
 
 (defn- resolve-task [suite]
-  (let [task (:lib/task suite)]
+  (let [task (:llm/task suite)]
     (cond
       (nil? task) default-task
       (fn? task) task
-      (qualified-symbol? task) (resolve-symbol task :lib/invalid-suite)
-      :else (throw (ex-info (str "Unsupported :lib/task: " (pr-str task))
-                            {:type :lib/invalid-suite :task task})))))
+      (qualified-symbol? task) (resolve-symbol task :llm/invalid-suite)
+      :else (throw (ex-info (str "Unsupported :llm/task: " (pr-str task))
+                            {:type :llm/invalid-suite :task task})))))
 
 (defn- run-one [config case variant scorers task]
-  (let [base #:lib{:case-id (:lib/id case) :variant-id (:lib/id variant)}]
+  (let [base #:llm{:case-id (:llm/id case) :variant-id (:llm/id variant)}]
     (try
       (let [response (task {:config config :case case :variant variant})
             context {:config config :case case :variant variant
                      :response response}
             scores (into {}
-                         (map (fn [{scorer-id :lib/id scorer-fn :lib/fn}]
+                         (map (fn [{scorer-id :llm/id scorer-fn :llm/fn}]
                                 [scorer-id
                                  (try (scorer-fn context)
                                       (catch Exception e
                                         {:score 0.0 :error (ex-message e)}))]))
                          scorers)]
-        (assoc base :lib/response response :lib/scores scores))
+        (assoc base :llm/response response :llm/scores scores))
       (catch Exception e
-        (assoc base :lib/error (ex-message e) :lib/ex-data (ex-data e))))))
+        (assoc base :llm/error (ex-message e) :llm/ex-data (ex-data e))))))
 
 (defn- run-all [config jobs scorers task concurrency]
   (if (<= concurrency 1)
@@ -237,21 +237,21 @@
   [results]
   {:by-variant
    (into {}
-         (for [[variant-id variant-results] (group-by :lib/variant-id results)]
-           (let [ok (remove :lib/error variant-results)
-                 score-ids (distinct (mapcat (comp keys :lib/scores) ok))]
+         (for [[variant-id variant-results] (group-by :llm/variant-id results)]
+           (let [ok (remove :llm/error variant-results)
+                 score-ids (distinct (mapcat (comp keys :llm/scores) ok))]
              [variant-id
               {:cases (count variant-results)
-               :errors (count (filter :lib/error variant-results))
-               :model (some #(get-in % [:lib/response :lib/model]) ok)
+               :errors (count (filter :llm/error variant-results))
+               :model (some #(get-in % [:llm/response :llm/model]) ok)
                :scores (into {}
                              (for [scorer-id score-ids]
                                [scorer-id
-                                {:mean (mean (keep #(get-in % [:lib/scores scorer-id :score]) ok))}]))
-               :latency-ms {:mean (mean (keep #(get-in % [:lib/response :lib/latency-ms]) ok))
-                            :max (reduce max 0 (keep #(get-in % [:lib/response :lib/latency-ms]) ok))}
-               :usage {:input-tokens (reduce + 0 (keep #(get-in % [:lib/response :lib/usage :input-tokens]) ok))
-                       :output-tokens (reduce + 0 (keep #(get-in % [:lib/response :lib/usage :output-tokens]) ok))}}])))})
+                                {:mean (mean (keep #(get-in % [:llm/scores scorer-id :score]) ok))}]))
+               :latency-ms {:mean (mean (keep #(get-in % [:llm/response :llm/latency-ms]) ok))
+                            :max (reduce max 0 (keep #(get-in % [:llm/response :llm/latency-ms]) ok))}
+               :usage {:input-tokens (reduce + 0 (keep #(get-in % [:llm/response :llm/usage :input-tokens]) ok))
+                       :output-tokens (reduce + 0 (keep #(get-in % [:llm/response :llm/usage :output-tokens]) ok))}}])))})
 
 (defn- thresholds-met? [summary thresholds]
   (every? (fn [[_variant-id s]]
@@ -263,14 +263,14 @@
 
 (defn run
   "Run an eval suite against `config`. `suite` is a map
-  #:lib{:cases [...] :variants [...] :scorers [...] :task ...
+  #:llm{:cases [...] :variants [...] :scorers [...] :task ...
   :thresholds {...}} or anything clj-llm.config/read-config accepts (a
   path to an EDN suite file).
 
   Options:
     :concurrency  how many cases to run in parallel (default 4)
 
-  Returns #:lib{:results [...] :summary {:by-variant {...}}
+  Returns #:llm{:results [...] :summary {:by-variant {...}}
   :run-at <Instant> :passed? <bool, present when the suite has
   thresholds>} — plain data; print it with print-summary, diff it, or
   store it next to the config that produced it."
@@ -279,20 +279,20 @@
    (let [suite (spec/assert-suite!
                 (if (map? suite) suite (config/read-config suite)))
          task (resolve-task suite)
-         scorers (vec (map-indexed normalize-scorer (:lib/scorers suite)))
-         variants (or (not-empty (:lib/variants suite)) [{:lib/id :default}])
-         thresholds (:lib/thresholds suite)
+         scorers (vec (map-indexed normalize-scorer (:llm/scorers suite)))
+         variants (or (not-empty (:llm/variants suite)) [{:llm/id :default}])
+         thresholds (:llm/thresholds suite)
          run-at (java.time.Instant/now)
-         jobs (for [variant variants, case (:lib/cases suite)] [case variant])
+         jobs (for [variant variants, case (:llm/cases suite)] [case variant])
          results (run-all config (vec jobs) scorers task concurrency)
          summary (summarize results)]
-     (cond-> #:lib{:results results
+     (cond-> #:llm{:results results
                    :summary summary
                    :run-at run-at
-                   :case-count (count (:lib/cases suite))
+                   :case-count (count (:llm/cases suite))
                    :variant-count (count variants)}
-       (seq thresholds) (assoc :lib/thresholds thresholds
-                               :lib/passed? (thresholds-met? summary thresholds))))))
+       (seq thresholds) (assoc :llm/thresholds thresholds
+                               :llm/passed? (thresholds-met? summary thresholds))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Reporting
@@ -305,7 +305,7 @@
 
 (defn print-summary
   "Print a per-variant comparison table for a `run` report."
-  [{:lib/keys [summary]}]
+  [{:llm/keys [summary]}]
   (let [by-variant (:by-variant summary)
         scorer-ids (->> (vals by-variant) (mapcat (comp keys :scores)) distinct sort)
         headers (concat ["variant" "model" "cases" "errors"]
@@ -335,16 +335,16 @@
     clojure -M:dev -m clj-llm.eval [suite.edn [llm.edn [profile]]]
 
   Defaults: evals/suite.edn and llm.edn. Exits non-zero when any case
-  errored or a threshold was missed (see :lib/thresholds)."
+  errored or a threshold was missed (see :llm/thresholds)."
   [& [suite-path config-path profile]]
   (let [config (llm/read-config (or config-path "llm.edn")
                                 (if profile {:profile (keyword profile)} {}))
         report (run config (or suite-path "evals/suite.edn"))]
     (print-summary report)
-    (let [errors (filter :lib/error (:lib/results report))
-          failed? (false? (:lib/passed? report))]
-      (doseq [{:lib/keys [case-id variant-id error]} errors]
+    (let [errors (filter :llm/error (:llm/results report))
+          failed? (false? (:llm/passed? report))]
+      (doseq [{:llm/keys [case-id variant-id error]} errors]
         (println "ERROR" case-id variant-id "-" error))
       (when failed?
-        (println "FAILED: score thresholds not met:" (pr-str (:lib/thresholds report))))
+        (println "FAILED: score thresholds not met:" (pr-str (:llm/thresholds report))))
       (System/exit (if (or (seq errors) failed?) 1 0)))))

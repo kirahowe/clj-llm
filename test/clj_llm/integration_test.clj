@@ -110,26 +110,26 @@
 (use-fixtures :each with-server)
 
 (defn- config []
-  #:lib{:providers {:anthropic {:lib/adapter :anthropic
+  #:llm{:providers {:anthropic {:llm/adapter :anthropic
                                 :base-url (str *base-url* "/anthropic")
                                 :api-key "test-key"}
-                    :compat {:lib/adapter :openai
+                    :compat {:llm/adapter :openai
                              :base-url (str *base-url* "/openai/v1")
                              :api-key "compat-key"}
-                    :local {:lib/adapter :ollama
+                    :local {:llm/adapter :ollama
                             :base-url (str *base-url* "/ollama")}
-                    :broken {:lib/adapter :anthropic
+                    :broken {:llm/adapter :anthropic
                              :base-url (str *base-url* "/broken")
                              :api-key "wrong"}}
-        :models {:default #:lib{:provider :anthropic :model "claude-sonnet-4-6"}
-                 :embeddings #:lib{:provider :local :model "nomic-embed-text"}}
-        :defaults #:lib{:model :default :embedding-model :embeddings}})
+        :models {:default #:llm{:provider :anthropic :model "claude-sonnet-4-6"}
+                 :embeddings #:llm{:provider :local :model "nomic-embed-text"}}
+        :defaults #:llm{:model :default :embedding-model :embeddings}})
 
 (deftest anthropic-round-trip
   (let [response (llm/generate (config) "hello")]
-    (is (= "Hi from fake Claude" (:lib/text response)))
-    (is (= :stop (:lib/finish-reason response)))
-    (is (= {:input-tokens 11 :output-tokens 5} (:lib/usage response)))
+    (is (= "Hi from fake Claude" (:llm/text response)))
+    (is (= :stop (:llm/finish-reason response)))
+    (is (= {:input-tokens 11 :output-tokens 5} (:llm/usage response)))
     (testing "wire request carried auth and version headers"
       (let [{:keys [headers body]} (first @requests)]
         (is (= ["test-key"] (get headers "x-api-key")))
@@ -138,8 +138,8 @@
         (is (= [{:role "user" :content "hello"}] (:messages body)))))))
 
 (deftest openai-compatible-round-trip
-  (let [response (llm/generate (config) "hello" {:lib/model "compat/test-model"})]
-    (is (= "plain" (:lib/text response)))
+  (let [response (llm/generate (config) "hello" {:llm/model "compat/test-model"})]
+    (is (= "plain" (:llm/text response)))
     (testing "bearer auth header"
       (is (= ["Bearer compat-key"]
              (get-in (first @requests) [:headers "authorization"]))))))
@@ -147,45 +147,45 @@
 (deftest openai-streaming-round-trip
   (let [chunks (atom [])
         response (llm/generate (config) "hello"
-                               {:lib/model "compat/test-model"
-                                :lib/on-chunk #(swap! chunks conj %)})]
+                               {:llm/model "compat/test-model"
+                                :llm/on-chunk #(swap! chunks conj %)})]
     (is (= "streamed" (str/join (map :text @chunks))))
     (is (every? #(= :text (:type %)) @chunks))
-    (is (= "streamed" (:lib/text response)))
-    (is (= :stop (:lib/finish-reason response)))
-    (is (= {:input-tokens 8 :output-tokens 2} (:lib/usage response)))))
+    (is (= "streamed" (:llm/text response)))
+    (is (= :stop (:llm/finish-reason response)))
+    (is (= {:input-tokens 8 :output-tokens 2} (:llm/usage response)))))
 
 (deftest ollama-streaming-round-trip
   (let [chunks (atom [])
         response (llm/generate (config) "hello"
-                               {:lib/model "local/llama3.2"
-                                :lib/on-chunk #(swap! chunks conj %)})]
+                               {:llm/model "local/llama3.2"
+                                :llm/on-chunk #(swap! chunks conj %)})]
     (is (= "local" (str/join (map :text @chunks))))
     (is (every? #(= :text (:type %)) @chunks))
-    (is (= "local" (:lib/text response)))
-    (is (= {:input-tokens 4 :output-tokens 2} (:lib/usage response)))))
+    (is (= "local" (:llm/text response)))
+    (is (= {:input-tokens 4 :output-tokens 2} (:llm/usage response)))))
 
 (deftest embeddings-round-trip
   (let [response (llm/embed (config) "embed me")]
-    (is (= [0.25 0.5 0.75] (:lib/embedding response)))
-    (is (= :local (:lib/provider response)))
+    (is (= [0.25 0.5 0.75] (:llm/embedding response)))
+    (is (= :local (:llm/provider response)))
     (is (= {:model "nomic-embed-text" :input ["embed me"]}
            (:body (first @requests))))))
 
 (deftest http-errors-carry-status-and-body
   (let [ex (try
-             (llm/generate (config) "hello" {:lib/model "broken/any"})
+             (llm/generate (config) "hello" {:llm/model "broken/any"})
              nil
              (catch Exception e e))]
     (is (some? ex))
-    (is (= :lib/http-error (:type (ex-data ex))))
+    (is (= :llm/http-error (:type (ex-data ex))))
     (is (= 401 (:status (ex-data ex))))
     (is (= "bad key" (get-in (ex-data ex) [:body :error :message])))))
 
 (deftest network-errors-are-typed
-  (let [config (assoc-in (config) [:lib/providers :anthropic :base-url]
+  (let [config (assoc-in (config) [:llm/providers :anthropic :base-url]
                          "http://127.0.0.1:9")
         ex (try (llm/generate config "hello") nil (catch Exception e e))]
     (is (some? ex))
-    (is (= :lib/network-error (:type (ex-data ex))))
+    (is (= :llm/network-error (:type (ex-data ex))))
     (is (instance? java.io.IOException (ex-cause ex)))))

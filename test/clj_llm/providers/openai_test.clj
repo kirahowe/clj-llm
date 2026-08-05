@@ -4,10 +4,10 @@
 
 (deftest build-request-basics
   (let [body (openai/build-request
-              {:lib/model "gpt-4o-mini"
-               :lib/messages [{:role :user :content "hi"}]
-               :lib/max-tokens 128
-               :lib/temperature 0.3})]
+              {:llm/model "gpt-4o-mini"
+               :llm/messages [{:role :user :content "hi"}]
+               :llm/max-tokens 128
+               :llm/temperature 0.3})]
     (is (= "gpt-4o-mini" (:model body)))
     (is (= [{:role "user" :content "hi"}] (:messages body)))
     (is (= 128 (:max_completion_tokens body))
@@ -18,9 +18,9 @@
 
 (deftest build-request-legacy-max-tokens
   (let [body (openai/build-request
-              {:lib/model "gpt-4o-mini"
-               :lib/messages [{:role :user :content "hi"}]
-               :lib/max-tokens 128}
+              {:llm/model "gpt-4o-mini"
+               :llm/messages [{:role :user :content "hi"}]
+               :llm/max-tokens 128}
               {:legacy-max-tokens? true})]
     (is (= 128 (:max_tokens body))
         ":legacy-max-tokens? true sends the older max_tokens field")
@@ -28,51 +28,51 @@
 
 (deftest build-request-system-prepended
   (let [body (openai/build-request
-              {:lib/model "m" :lib/system "be brief"
-               :lib/messages [{:role :user :content "hi"}]})]
+              {:llm/model "m" :llm/system "be brief"
+               :llm/messages [{:role :user :content "hi"}]})]
     (is (= [{:role "system" :content "be brief"}
             {:role "user" :content "hi"}]
            (:messages body)))))
 
 (deftest build-request-system-overrides-inline
   (let [body (openai/build-request
-              {:lib/model "m" :lib/system "override"
-               :lib/messages [{:role :system :content "inline"}
+              {:llm/model "m" :llm/system "override"
+               :llm/messages [{:role :system :content "inline"}
                               {:role :user :content "hi"}]})]
     (is (= [{:role "system" :content "override"}
             {:role "user" :content "hi"}]
            (:messages body))
-        ":lib/system wins over an inline system message, which is dropped")))
+        ":llm/system wins over an inline system message, which is dropped")))
 
 (deftest build-request-streaming-asks-for-usage
   (let [body (openai/build-request
-              {:lib/model "m"
-               :lib/messages [{:role :user :content "hi"}]}
+              {:llm/model "m"
+               :llm/messages [{:role :user :content "hi"}]}
               {:stream? true})]
     (is (true? (:stream body)))
     (is (= {:include_usage true} (:stream_options body)))))
 
 (deftest build-request-options-nil-removes-keys
   (let [body (openai/build-request
-              {:lib/model "m"
-               :lib/messages [{:role :user :content "hi"}]
-               :lib/options {:stream_options nil :seed 42}}
+              {:llm/model "m"
+               :llm/messages [{:role :user :content "hi"}]
+               :llm/options {:stream_options nil :seed 42}}
               {:stream? true})]
     (is (true? (:stream body)))
     (is (= 42 (:seed body)))
     (is (not (contains? body :stream_options))
-        "nil in :lib/options removes a key the adapter set")))
+        "nil in :llm/options removes a key the adapter set")))
 
 (deftest tool-conversation-wire-format
   (let [body (openai/build-request
-              {:lib/model "m"
-               :lib/messages [{:role :user :content "weather?"}
+              {:llm/model "m"
+               :llm/messages [{:role :user :content "weather?"}
                               {:role :assistant :content nil
                                :tool-calls [{:id "call_1" :name "get-weather"
                                              :arguments {:city "Berlin"}}]}
                               {:role :tool :tool-call-id "call_1"
                                :name "get-weather" :content "21C"}]
-               :lib/tools [{:name "get-weather" :description "d"
+               :llm/tools [{:name "get-weather" :description "d"
                             :parameters {:type "object"}}]})
         [_ assistant result] (:messages body)]
     (is (= [{:type "function"
