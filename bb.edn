@@ -18,7 +18,7 @@
        :task (clojure "-M:cljfmt" "check" "src" "test" "dev")}
 
   fmt:fix {:doc "Fix formatting with cljfmt"
-           :task (clojure "-M:cljfmt fix src test dev")}
+           :task (clojure "-M:cljfmt" "fix" "src" "test" "dev")}
 
   book {:doc "Render the documentation book with Clay + Quarto into docs/"
         :task (clojure "-M:book")}

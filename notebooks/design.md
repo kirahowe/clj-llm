@@ -34,7 +34,7 @@ Third-party adapters are a compatibility surface in both directions, so `clj-llm
 - New result keys are always optional; `:message`, `:usage`, `:finish-reason` and `:raw` remain sufficient.
 - SPI signatures are frozen: `(-generate! provider-config request opts)`, `(-embed! provider-config request opts)`, `(-start provider-config opts)`, `(-stop provider-config opts)`. Each has exactly one arity, so an adapter implements exactly one thing and there is no forgettable delegating boilerplate. The `opts` map is reserved harness context (empty today: cancellation, deadlines and telemetry are the kinds of things that will travel there). Nothing will ever arrive as a new positional argument, because multimethod arity changes are the one thing existing adapters could never survive. The unprefixed API functions belong to the library and may grow conveniences freely. They are also the permanent seam for future validation or instrumentation around adapter calls.
 - Any future SPI multimethod ships with a `:default` implementation, so existing adapters keep loading without edits.
-- In provider config maps, only `:lib/`-qualified keys are the library's; the unqualified keyspace belongs to the adapter named by `:lib/adapter`.
+- In provider config maps, only `:lib/`-qualified keys are the library's; the unqualified keyspace belongs to the adapter named by `:lib/adapter`. The library injects exactly one at resolution time: `:lib/name`, the name the provider was registered under in `:lib/providers` — useful in adapter error messages.
 
 (Why multimethods and not a protocol: protocols dispatch on the *type* of the first argument, and provider configs are plain maps on purpose. A protocol would force adapters to become instantiated objects behind a constructor registry, giving up config-as-data. Multimethods dispatch on a value in the data, which is the shape of this problem; the ergonomic arity story lives in the wrapper functions instead.)
 
@@ -42,7 +42,9 @@ Third-party adapters are a compatibility surface in both directions, so `clj-llm
 
 Thrown `ex-info`s carry a `:type` in their ex-data, and these keywords are stable, flat (decoupled from internal namespace layout), and never change meaning:
 
-`:lib/http-error` (with `:status`, `:url`, `:body`), `:lib/invalid-request`, `:lib/invalid-config`, `:lib/invalid-suite`, `:lib/config-error`, `:lib/config-not-found`, `:lib/unknown-adapter`, `:lib/unknown-scorer`, `:lib/invalid-case`, `:lib/missing-api-key`, `:lib/unsupported`, `:lib/stream-error`.
+`:lib/http-error` (with `:status`, `:url`, `:body`), `:lib/network-error` (connect failures, timeouts, dropped streams — with `:url`, wrapping the underlying `IOException`), `:lib/invalid-request`, `:lib/invalid-config`, `:lib/invalid-suite`, `:lib/config-error`, `:lib/config-not-found`, `:lib/unknown-adapter`, `:lib/unknown-scorer`, `:lib/invalid-case`, `:lib/missing-api-key`, `:lib/unsupported`, `:lib/stream-error`.
+
+The line between the two HTTP-ish types: `:lib/http-error` means the provider answered and said no (it carries the status and parsed body); `:lib/network-error` means you never got an answer.
 
 `:lib/finish-reason` values are an open set: the common ones are normalized (`:stop`, `:length`, `:tool-calls`, `:refusal`), and unrecognized provider reasons pass through as keywords rather than being erased.
 
@@ -58,4 +60,4 @@ Thrown `ex-info`s carry a `:type` in their ex-data, and these keywords are stabl
 
 **Evals live in the core, with an extraction seam.** Keeping `clj-llm.eval` in the main artifact is a statement: measurement is not an optional extra. The `:lib/task` indirection doubles as the seam, because the eval harness runs arbitrary task functions and only *defaults* to `clj-llm.core/generate`. If the harness ever deserves a standalone life, it can move without breaking a caller.
 
-**Wire compatibility tracks the present, with escape hatches.** The OpenAI adapter sends `max_completion_tokens` (the current field); `:legacy-max-tokens? true` on a provider covers older compatible servers. Anything the normalized request doesn't model can be forced onto the wire via `:lib/options`, which merges into the request body last.
+**Wire compatibility tracks the present, with escape hatches.** The OpenAI adapter sends `max_completion_tokens` (the current field); `:legacy-max-tokens? true` on a provider covers older compatible servers. Anything the normalized request doesn't model can be forced onto the wire via `:lib/options`, which merges into the request body last — and a nil value in `:lib/options` *removes* a key, so a default the adapter injects (say, `stream_options` on a server that predates it) can be stripped without a new adapter flag.

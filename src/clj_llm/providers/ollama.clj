@@ -40,8 +40,9 @@
   ([request] (build-request request {}))
   ([{:lib/keys [model messages system max-tokens temperature tools options]}
     {:keys [stream?]}]
-   (let [messages (if (and system (not-any? #(= :system (:role %)) messages))
-                    (into [{:role :system :content system}] messages)
+   (let [messages (if system
+                    (into [{:role :system :content system}]
+                          (remove #(= :system (:role %)) messages))
                     messages)
          model-options (cond-> (:model-options options {})
                          temperature (assoc :temperature temperature)
@@ -51,7 +52,7 @@
               :stream (boolean stream?)}
        (seq tools) (assoc :tools (mapv tool->wire tools))
        (seq model-options) (assoc :options model-options)
-       options (merge (dissoc options :model-options))))))
+       :always (provider/merge-options (dissoc options :model-options))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Response parsing
@@ -142,7 +143,7 @@
                         {:url (str (base-url provider-config) "/api/embed")
                          :headers (:headers provider-config)
                          :timeout-ms (:timeout-ms provider-config)
-                         :body (merge {:model model :input input} options)})]
+                         :body (provider/merge-options {:model model :input input} options)})]
     {:embeddings (vec (:embeddings body))
      :model (:model body)
      :usage {:input-tokens (:prompt_eval_count body)}

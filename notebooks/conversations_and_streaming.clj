@@ -22,6 +22,11 @@
 
 (:lib/text r2)
 
+;; `:lib/prompt` next to `:lib/messages` is the same thing with less typing — it appends the prompt as the next user message:
+
+(:lib/text (llm/generate config {:lib/messages (:lib/messages r1)
+                                 :lib/prompt "Why is it prime?"}))
+
 ;; The accumulated conversation is plain data. Four messages now, each a `{:role ... :content ...}` map:
 
 (mapv :role (:lib/messages r2))

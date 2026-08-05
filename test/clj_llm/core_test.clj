@@ -127,6 +127,22 @@
     (is (= (conj history {:role :assistant :content "17"})
            (:lib/messages response)))))
 
+(deftest prompt-folds-into-messages
+  (let [history [{:role :user :content "Pick a number."}
+                 {:role :assistant :content "42"}]
+        expected (conj history {:role :user :content "next"})]
+    (testing ":lib/messages plus :lib/prompt appends the prompt in order"
+      (let [requests (atom [])
+            config (scripted-config [(text-response "43")] :requests requests)]
+        (llm/generate config {:lib/messages history :lib/prompt "next"})
+        (is (= expected (:lib/messages (first @requests))))))
+
+    (testing "a prompt string plus opts :lib/messages appends the same way"
+      (let [requests (atom [])
+            config (scripted-config [(text-response "43")] :requests requests)]
+        (llm/generate config "next" {:lib/messages history})
+        (is (= expected (:lib/messages (first @requests))))))))
+
 (def weather-tool-call
   {:id "call_1" :name "get-weather" :arguments {:city "Berlin"}})
 

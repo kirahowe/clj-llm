@@ -74,7 +74,7 @@
        temperature (assoc :temperature temperature)
        (seq tools) (assoc :tools (mapv tool->wire tools))
        stream? (assoc :stream true)
-       options (merge options)))))
+       :always (provider/merge-options options)))))
 
 ;; ---------------------------------------------------------------------------
 ;; Response parsing
@@ -180,7 +180,7 @@
 
 (defn- api-key! [provider-config]
   (or (:api-key provider-config)
-      (throw (ex-info (str "Provider " (or (:clj-llm.config/name provider-config)
+      (throw (ex-info (str "Provider " (or (:lib/name provider-config)
                                            ":anthropic")
                            " has no :api-key. Set it in your config file, e.g. "
                            ":api-key #env ANTHROPIC_API_KEY")
@@ -217,4 +217,4 @@
   (throw (ex-info (str "Anthropic has no embeddings API. Configure an :openai "
                        "or :ollama provider for embeddings.")
                   {:type :lib/unsupported
-                   :provider (:clj-llm.config/name provider-config)})))
+                   :provider (:lib/name provider-config)})))

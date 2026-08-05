@@ -50,8 +50,9 @@
   ([request] (build-request request {}))
   ([{:lib/keys [model messages system max-tokens temperature tools options]}
     {:keys [stream? legacy-max-tokens?]}]
-   (let [messages (if (and system (not-any? #(= :system (:role %)) messages))
-                    (into [{:role :system :content system}] messages)
+   (let [messages (if system
+                    (into [{:role :system :content system}]
+                          (remove #(= :system (:role %)) messages))
                     messages)]
      (cond-> {:model model
               :messages (mapv message->wire messages)}
@@ -61,7 +62,7 @@
        (seq tools) (assoc :tools (mapv tool->wire tools))
        stream? (assoc :stream true
                       :stream_options {:include_usage true})
-       options (merge options)))))
+       :always (provider/merge-options options)))))
 
 ;; ---------------------------------------------------------------------------
 ;; Response parsing
@@ -186,7 +187,7 @@
                         {:url (str (base-url provider-config) "/embeddings")
                          :headers (headers provider-config)
                          :timeout-ms (:timeout-ms provider-config)
-                         :body (merge {:model model :input input} options)})]
+                         :body (provider/merge-options {:model model :input input} options)})]
     {:embeddings (->> (:data body) (sort-by :index) (mapv :embedding))
      :model (:model body)
      :usage {:input-tokens (get-in body [:usage :prompt_tokens])}

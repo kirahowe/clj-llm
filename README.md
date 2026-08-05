@@ -38,6 +38,14 @@ Built on the JDK's own `java.net.http` client plus
 [aero](https://github.com/juxt/aero) and
 [malli](https://github.com/metosin/malli).
 
+## Status
+
+Alpha. The API described here is intended to be final — the
+[compatibility promises](#compatibility-promises) are the point of the
+library — but until 0.1.0 proper the door for breaking fixes is still,
+barely, open. If some part of the contract would break you, now is the
+time to say so.
+
 ## Installation
 
 Not yet on Clojars. Use it as a git dependency:
@@ -160,6 +168,10 @@ the next user message onto the previous response's messages:
 (llm/generate config
               {:lib/messages (conj (:lib/messages r1)
                                    {:role :user :content "Why is it prime?"})})
+
+;; equivalently: :lib/prompt appends to :lib/messages as a user message
+(llm/generate config {:lib/messages (:lib/messages r1)
+                      :lib/prompt "Why is it prime?"})
 ```
 
 Store that vector wherever your context keeps state — a Ring session, an
@@ -257,8 +269,10 @@ tools...), scorers say *what good looks like*:
                  #:lib{:id :cheap    :model :fast}
                  #:lib{:id :terse    :model :smart :system "Answer in one word."}]
       :scorers  [:includes]
-      ;; optional: minimum mean score per scorer — the CLI exits
-      ;; non-zero below this, so a suite can gate CI like a test suite
+      ;; optional: minimum mean score per scorer, which EVERY variant
+      ;; must clear — the CLI exits non-zero below it, so a suite can
+      ;; gate CI like a test suite. Keep exploratory comparisons (where
+      ;; a cheap variant is allowed to lose) in a separate, ungated suite.
       :thresholds {:includes 0.9}}
 ```
 
@@ -400,10 +414,12 @@ that namespace is the precise, machine-checkable version of this table.
 
 Errors throw `ex-info`; the ex-data `:type` values are part of the
 stable API: `:lib/http-error` (with `:status` and `:body`),
-`:lib/invalid-request`, `:lib/invalid-config`, `:lib/config-error`,
-`:lib/unknown-adapter`, `:lib/missing-api-key`, `:lib/unsupported`,
-`:lib/stream-error`, `:lib/invalid-suite`, `:lib/unknown-scorer`,
-`:lib/invalid-case`, `:lib/config-not-found`.
+`:lib/network-error` (connect failures, timeouts, dropped streams —
+wraps the underlying `IOException`), `:lib/invalid-request`,
+`:lib/invalid-config`, `:lib/config-error`, `:lib/unknown-adapter`,
+`:lib/missing-api-key`, `:lib/unsupported`, `:lib/stream-error`,
+`:lib/invalid-suite`, `:lib/unknown-scorer`, `:lib/invalid-case`,
+`:lib/config-not-found`.
 
 ## Compatibility promises
 

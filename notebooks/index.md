@@ -2,7 +2,7 @@
 
 A small, functional Clojure library for calling large language models, with evals built in. It works with any model from any provider, including local ones.
 
-The premise: you can't build well with LLMs unless measuring what they do is as easy as calling them. Most LLM libraries treat evaluation as someone else's problem; here every response is already a replayable measurement record, and turning a folder of real interactions into a scored comparison of models, prompts, or whole pipelines is a one-liner.
+The premise: you can't build well with LLMs unless measuring what they do is as easy as calling them. Most LLM libraries treat evaluation as someone else's problem; here every response is already a replayable interaction record, and turning a folder of real interactions into a scored comparison of models, prompts, or whole pipelines is a one-liner.
 
 ## What it looks like
 

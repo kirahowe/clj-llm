@@ -36,6 +36,8 @@
       ;; pipeline, agent, handler) instead of a raw LLM call.
       ;; :task my.app.evals/run-pipeline
 
-      ;; Optional: minimum mean score per scorer — makes `bb eval` exit
-      ;; non-zero when quality regresses, so a suite can gate CI.
+      ;; Optional: minimum mean score per scorer, which every variant must
+      ;; clear — makes `bb eval` exit non-zero when quality regresses, so a
+      ;; suite can gate CI. Keep gated suites separate from exploratory
+      ;; comparisons where a cheap variant is allowed to lose.
       :thresholds {:includes 0.9}}

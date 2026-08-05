@@ -65,27 +65,32 @@
 ;; ---------------------------------------------------------------------------
 ;; Request normalization
 
-(defn- ->request [prompt-or-request]
+(defn- ->raw-request [prompt-or-request]
   (cond
     (string? prompt-or-request)
-    {:lib/messages [{:role :user :content prompt-or-request}]}
+    {:lib/prompt prompt-or-request}
 
     (map? prompt-or-request)
-    (cond
-      (:lib/messages prompt-or-request) prompt-or-request
-      (:lib/prompt prompt-or-request) (-> prompt-or-request
-                                          (dissoc :lib/prompt)
-                                          (assoc :lib/messages
-                                                 [{:role :user
-                                                   :content (:lib/prompt prompt-or-request)}]))
-      :else (throw (ex-info "Request map needs :lib/messages or :lib/prompt"
-                            {:type :lib/invalid-request
-                             :request prompt-or-request})))
+    prompt-or-request
 
     :else
     (throw (ex-info (str "generate takes a prompt string or a request map, got: "
                          (pr-str prompt-or-request))
                     {:type :lib/invalid-request}))))
+
+(defn- fold-prompt
+  "Fold :lib/prompt into :lib/messages as the trailing user message, if
+  present. Applied after config defaults, the positional argument and
+  opts are all merged, so :lib/prompt always lands after whatever
+  history :lib/messages already carries (vec first — callers may pass
+  a list, and conj on a list prepends)."
+  [request]
+  (if-let [prompt (:lib/prompt request)]
+    (-> request
+        (dissoc :lib/prompt)
+        (assoc :lib/messages (conj (vec (:lib/messages request))
+                                   {:role :user :content prompt})))
+    request))
 
 (defn- request-defaults
   "Request-level defaults from config (everything under :lib/defaults
@@ -153,7 +158,9 @@
                      #:lib{:provider <name> :model \"id\"} — defaults
                      to the :lib/model alias under :lib/defaults
     :lib/messages    the conversation so far (vector of {:role :content})
-    :lib/prompt      shorthand for a single user message
+    :lib/prompt      appended to :lib/messages as the next user message —
+                     zero-shot shorthand on its own, or a way to continue
+                     a conversation when :lib/messages is also given
     :lib/system      system prompt
     :lib/max-tokens, :lib/temperature
     :lib/tools       tool maps {:name :description :parameters :fn};
@@ -200,10 +207,13 @@
    (generate config prompt-or-request nil))
   ([config prompt-or-request opts]
    (spec/assert-config! config)
-   (let [request (spec/assert-request!
-                  (merge (request-defaults config)
-                         (->request prompt-or-request)
-                         opts))
+   (let [request (fold-prompt (merge (request-defaults config)
+                                     (->raw-request prompt-or-request)
+                                     opts))
+         _ (when (empty? (:lib/messages request))
+             (throw (ex-info "Request needs :lib/messages or :lib/prompt"
+                             {:type :lib/invalid-request :request request})))
+         request (spec/assert-request! request)
          {:keys [provider model]} (config/resolve-model config (:lib/model request))
          request (assoc request :lib/model model)
          max-rounds (or (:lib/max-tool-rounds request) default-max-tool-rounds)

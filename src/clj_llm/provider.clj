@@ -35,7 +35,9 @@
           :on-chunk    (fn [{:keys [type text]}])  optional streaming callback;
                                              chunks have :type (:text today)
           :options     {...}}                provider-specific passthrough,
-                                             merged into the wire request
+                                             merged into the wire request;
+                                             nil values remove keys the
+                                             adapter would otherwise set
 
   Messages, tools, tool calls and usage are plain-keyed protocol
   structures (see clj-llm.spec). Message roles are :system, :user,
@@ -78,7 +80,10 @@
 
   - Unqualified keys in provider config maps other than those read by
     the adapter itself will never gain library-level meaning; only
-    :lib/-qualified keys are the library's.")
+    :lib/-qualified keys are the library's. One exception: the library
+    injects :lib/name at resolution time, the name the provider was
+    registered under in :lib/providers (handy in adapter error
+    messages).")
 
 (defn- dispatch [provider-config & _]
   (:lib/adapter provider-config))
@@ -160,3 +165,16 @@
   Called by the integrant bindings on system halt."
   ([provider-config] (-stop provider-config {}))
   ([provider-config opts] (-stop provider-config opts)))
+
+(defn merge-options
+  "Merge a request's :lib/options into an adapter-built wire-format
+  request body. Non-nil values override what the adapter built; nil
+  values remove the key entirely — the escape hatch when an adapter
+  injects a default a particular server rejects (e.g.
+  #:lib{:options {:stream_options nil}} for OpenAI-compatible servers
+  that predate stream_options). Adapters should apply this last, so
+  options always win."
+  [body options]
+  (reduce-kv (fn [m k v] (if (nil? v) (dissoc m k) (assoc m k v)))
+             body
+             (or options {})))

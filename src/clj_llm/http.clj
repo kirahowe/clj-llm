@@ -46,36 +46,51 @@
                    :url url
                    :body body})))
 
+(defn- network-error! [url e]
+  (throw (ex-info (str "Network error calling " url ": " (ex-message e))
+                  {:type :lib/network-error :url url}
+                  e)))
+
 (defn post-json
   "POST `body` as JSON to `url`. Returns {:status n :body <parsed JSON,
   keyword keys>}. Throws ex-info {:type :lib/http-error :status ...
-  :body ...} on a non-2xx response."
+  :body ...} on a non-2xx response; network-level failures (connect,
+  timeout, dropped streams) throw {:type :lib/network-error :url ...}
+  wrapping the IOException."
   [{:keys [url] :as request}]
-  (let [^HttpResponse response (.send ^HttpClient @client
-                                      (build-request request)
-                                      (HttpResponse$BodyHandlers/ofString))
-        status (.statusCode response)]
-    (if (<= 200 status 299)
-      {:status status :body (parse-json (.body response))}
-      (error! url status (parse-json (.body response))))))
+  (try
+    (let [^HttpResponse response (.send ^HttpClient @client
+                                        (build-request request)
+                                        (HttpResponse$BodyHandlers/ofString))
+          status (.statusCode response)]
+      (if (<= 200 status 299)
+        {:status status :body (parse-json (.body response))}
+        (error! url status (parse-json (.body response)))))
+    (catch java.io.IOException e
+      (network-error! url e))))
 
 (defn post-json-lines
   "POST `body` as JSON to `url` and reduce (f acc line) over each line of
   the response as it arrives — the streaming transport for both SSE and
   NDJSON. Blank lines are skipped. Returns the final accumulator.
-  Throws like `post-json` on a non-2xx response."
+  Throws like `post-json` on a non-2xx response; network-level failures
+  (connect, timeout, dropped streams) throw {:type :lib/network-error
+  :url ...} wrapping the IOException."
   [{:keys [url] :as request} f init]
-  (let [^HttpResponse response (.send ^HttpClient @client
-                                      (build-request request)
-                                      (HttpResponse$BodyHandlers/ofInputStream))
-        status (.statusCode response)]
-    (if (<= 200 status 299)
-      (with-open [reader (io/reader (.body response))]
-        (reduce (fn [acc line]
-                  (if (str/blank? line) acc (f acc line)))
-                init
-                (line-seq reader)))
-      (error! url status (parse-json (slurp (.body response)))))))
+  (try
+    (let [^HttpResponse response (.send ^HttpClient @client
+                                        (build-request request)
+                                        (HttpResponse$BodyHandlers/ofInputStream))
+          status (.statusCode response)]
+      (if (<= 200 status 299)
+        (with-open [reader (io/reader (.body response))]
+          (reduce (fn [acc line]
+                    (if (str/blank? line) acc (f acc line)))
+                  init
+                  (line-seq reader)))
+        (error! url status (parse-json (slurp (.body response))))))
+    (catch java.io.IOException e
+      (network-error! url e))))
 
 (defn sse-data
   "Given one line of a server-sent-events stream, return the data payload

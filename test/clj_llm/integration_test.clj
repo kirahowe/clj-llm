@@ -181,3 +181,11 @@
     (is (= :lib/http-error (:type (ex-data ex))))
     (is (= 401 (:status (ex-data ex))))
     (is (= "bad key" (get-in (ex-data ex) [:body :error :message])))))
+
+(deftest network-errors-are-typed
+  (let [config (assoc-in (config) [:lib/providers :anthropic :base-url]
+                         "http://127.0.0.1:9")
+        ex (try (llm/generate config "hello") nil (catch Exception e e))]
+    (is (some? ex))
+    (is (= :lib/network-error (:type (ex-data ex))))
+    (is (instance? java.io.IOException (ex-cause ex)))))

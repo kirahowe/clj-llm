@@ -8,7 +8,6 @@
   (:require [clj-llm.core :as llm]
             [clj-llm.eval :as eval]
             [book.demo :as demo]
-            [clojure.string :as str]
             [scicloj.kindly.v4.kind :as kind]))
 
 (def config demo/config)
@@ -128,7 +127,7 @@
 
 ;; ## Thresholds: evals as a CI gate
 
-;; A report someone has to remember to read eventually stops being read. `:lib/thresholds` sets a minimum mean score per scorer; the report then carries `:lib/passed?`, and the CLI (`bb eval`, or `clojure -M:dev -m clj-llm.eval`) exits non-zero when a threshold is missed or any case errors, so a suite drops into CI like any other test suite:
+;; A report someone has to remember to read eventually stops being read. `:lib/thresholds` sets a minimum mean score per scorer — one that **every** variant must clear; the report then carries `:lib/passed?`, and the CLI (`bb eval`, or `clojure -M:dev -m clj-llm.eval`) exits non-zero when a threshold is missed or any case errors, so a suite drops into CI like any other test suite. That "every variant" rule means gating suites and exploratory comparisons want to be separate files: a comparison where the cheap model is allowed to lose shouldn't fail your build.
 
 (let [gated (assoc suite :lib/thresholds {:includes 0.9})]
   (select-keys (eval/run config gated) [:lib/passed? :lib/thresholds]))

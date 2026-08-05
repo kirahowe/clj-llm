@@ -24,7 +24,15 @@
                  :lib/messages [{:role :system :content "be brief"}
                                 {:role :user :content "hi"}]})]
       (is (= "be brief" (:system body)))
-      (is (= [{:role "user" :content "hi"}] (:messages body))))))
+      (is (= [{:role "user" :content "hi"}] (:messages body)))))
+  (testing ":lib/system wins over an inline system message"
+    (let [body (anthropic/build-request
+                {:lib/model "m" :lib/system "override"
+                 :lib/messages [{:role :system :content "inline"}
+                                {:role :user :content "hi"}]})]
+      (is (= "override" (:system body)))
+      (is (= [{:role "user" :content "hi"}] (:messages body))
+          "no system-role message leaks into :messages"))))
 
 (deftest build-request-tools-and-options
   (let [body (anthropic/build-request
@@ -43,6 +51,15 @@
              :input_schema {:type "object"}}]
            (:tools body)))
     (is (= 5 (:top_k body)) ":lib/options merge into the wire request")))
+
+(deftest build-request-options-nil-removes-keys
+  (let [body (anthropic/build-request
+              {:lib/model "m"
+               :lib/messages [{:role :user :content "hi"}]
+               :lib/options {:max_tokens nil :top_k 5}})]
+    (is (= 5 (:top_k body)))
+    (is (not (contains? body :max_tokens))
+        "nil in :lib/options removes a key the adapter always injects")))
 
 (deftest build-request-streaming
   (let [body (anthropic/build-request

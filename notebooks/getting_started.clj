@@ -57,7 +57,7 @@
 
 ;; ## Requests beyond a string
 
-;; A request can be a map. `:lib/prompt` is shorthand for a single user message; `:lib/system`, `:lib/max-tokens` and `:lib/temperature` do what they say; the namespaced-map literal `#:lib{...}` keeps it tidy:
+;; A request can be a map. `:lib/prompt` appends a user message to `:lib/messages` — with no messages it's simply the prompt, and alongside messages it's the next conversational turn; `:lib/system`, `:lib/max-tokens` and `:lib/temperature` do what they say; the namespaced-map literal `#:lib{...}` keeps it tidy:
 
 (llm/generate config #:lib{:system "You are terse."
                            :prompt "Why is the sky blue?"

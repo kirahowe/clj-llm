@@ -34,6 +34,16 @@
             {:role "user" :content "hi"}]
            (:messages body)))))
 
+(deftest build-request-system-overrides-inline
+  (let [body (openai/build-request
+              {:lib/model "m" :lib/system "override"
+               :lib/messages [{:role :system :content "inline"}
+                              {:role :user :content "hi"}]})]
+    (is (= [{:role "system" :content "override"}
+            {:role "user" :content "hi"}]
+           (:messages body))
+        ":lib/system wins over an inline system message, which is dropped")))
+
 (deftest build-request-streaming-asks-for-usage
   (let [body (openai/build-request
               {:lib/model "m"
@@ -41,6 +51,17 @@
               {:stream? true})]
     (is (true? (:stream body)))
     (is (= {:include_usage true} (:stream_options body)))))
+
+(deftest build-request-options-nil-removes-keys
+  (let [body (openai/build-request
+              {:lib/model "m"
+               :lib/messages [{:role :user :content "hi"}]
+               :lib/options {:stream_options nil :seed 42}}
+              {:stream? true})]
+    (is (true? (:stream body)))
+    (is (= 42 (:seed body)))
+    (is (not (contains? body :stream_options))
+        "nil in :lib/options removes a key the adapter set")))
 
 (deftest tool-conversation-wire-format
   (let [body (openai/build-request

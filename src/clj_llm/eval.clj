@@ -56,9 +56,11 @@
             read (conventionally at least :lib/text; return real
             generate responses and latency/usage summaries stay accurate).
   Thresholds: :lib/thresholds {scorer-id min-mean-score} makes the
-            report (and the CLI exit code) fail when a variant's mean for
-            that scorer drops below the minimum — evals as a CI gate, not
-            just a report."
+            report (and the CLI exit code) fail when any variant's mean
+            for that scorer drops below the minimum — evals as a CI
+            gate, not just a report. Because every variant must clear
+            the bar, keep gated suites separate from exploratory
+            comparisons where a cheap variant is allowed to lose."
   (:require [cheshire.core :as json]
             [clojure.string :as str]
             [clj-llm.core :as llm]

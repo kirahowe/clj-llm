@@ -44,14 +44,14 @@
 (defn provider-name
   "The name a provider config was registered under in :lib/providers."
   [provider-config]
-  (::name provider-config))
+  (:lib/name provider-config))
 
 (defn provider-config
-  "Look up a provider by name, tagging it with ::name for error reporting.
-  Throws when the provider is not configured."
+  "Look up a provider by name, tagging it with :lib/name for error
+  reporting. Throws when the provider is not configured."
   [config provider-name]
   (if-let [p (get-in config [:lib/providers provider-name])]
-    (assoc p ::name provider-name)
+    (assoc p :lib/name provider-name)
     (throw (ex-info (str "No provider named " provider-name " in config. "
                          "Known providers: "
                          (pr-str (keys (:lib/providers config))))

@@ -3,7 +3,33 @@ All notable changes to this project will be documented in this file. This change
 
 ## [Unreleased]
 
+## [0.1.0-alpha1] — 2026-08-03
+
+Initial public alpha. The API is intended to be final; the alpha window
+exists so anything that would force a breaking change can still surface
+and be fixed before 0.1.0.
+
 ### Changed (pre-release API finalization)
+- **`:lib/prompt` appends to `:lib/messages`** as the next user message
+  (and is plain zero-shot shorthand when there are no messages).
+  Previously, passing both silently dropped the prompt — a request that
+  looked like "continue the conversation with this question" answered
+  the bare history instead.
+- **`:lib/system` wins over inline system messages in every adapter.**
+  The OpenAI and Ollama adapters used to silently ignore `:lib/system`
+  whenever the messages already contained a `:system`-role message;
+  Anthropic did the opposite. One rule now: an explicit `:lib/system`
+  replaces whatever system messages the conversation carries.
+- **nil values in `:lib/options` remove wire keys.** Options still merge
+  into the wire body last, but a nil value now deletes the key instead
+  of sending JSON null — the escape hatch for adapter-injected defaults
+  that some servers reject (e.g. `{:stream_options nil}` for
+  OpenAI-compatible servers that predate `stream_options`). Adapter
+  authors get the same behavior from `clj-llm.provider/merge-options`.
+- **Provider configs carry `:lib/name`** (the name the provider was
+  registered under), replacing the internal `:clj-llm.config/name` tag —
+  provider config maps now contain only adapter-owned unqualified keys
+  and `:lib/`-qualified library keys, as the keyspace rule says.
 - **Dropped the `kirahowe.` prefix from all namespaces**: they are now
   `clj-llm.core`, `clj-llm.eval`, `clj-llm.provider`, ... (the Maven
   artifact remains `com.kirahowe/clj-llm`); the integrant key is
@@ -50,6 +76,10 @@ All notable changes to this project will be documented in this file. This change
   internal namespace layout and frozen as public API.
 
 ### Added
+- **`:lib/network-error`** for network-level failures (connect errors,
+  timeouts, dropped streams), wrapping the underlying `IOException` —
+  so both "the provider said no" (`:lib/http-error`) and "the provider
+  never answered" are `ex-info`s with stable types.
 - **Malli schemas for every public contract** (`clj-llm.spec`): messages,
   tools, requests, responses, config, cases, variants, suites. Requests,
   configs and suites are validated at the boundary with humanized errors
@@ -88,16 +118,9 @@ All notable changes to this project will be documented in this file. This change
 - Babashka tasks for all dev workflows (`bb tasks`), including `bb eval`.
 - Documentation book under `notebooks/`, rendered with Clay + Quarto.
 
-### Planned (evals roadmap — deliberately additive)
-- Response caching so re-running a suite after a scorer-only change is
-  cheap and reproducible (user-suppliable get/put pair).
-- EDN-expressible model-graded judges, e.g.
-  `{:llm-judge {:model :smart :criteria "..."}}` as a scorer form in
-  suite files.
-- Per-case weights, and report diffing helpers for comparing stored
-  reports across time.
-- A response-shape contract for tasks that return richer system output
-  (retrieved documents, intermediate steps) so scorers can grade
-  process, not just final text.
+Planned work lives in the book's
+[roadmap chapter](notebooks/roadmap.md) — everything there is additive
+by design.
 
-[Unreleased]: https://github.com/kirahowe/clj-llm/compare/...HEAD
+[Unreleased]: https://github.com/kirahowe/clj-llm/compare/v0.1.0-alpha1...HEAD
+[0.1.0-alpha1]: https://github.com/kirahowe/clj-llm/releases/tag/v0.1.0-alpha1

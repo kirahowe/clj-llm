@@ -64,9 +64,9 @@ And returns:
 
 Conventions the built-ins follow, worth copying:
 
-- **Honor `:lib/options` by merging it into the wire body last.** It's the user's escape hatch for anything your adapter doesn't model.
+- **Honor `:lib/options` by applying it to the wire body last**, via `provider/merge-options`: non-nil values override what you built, nil values remove the key. It's the user's escape hatch both for anything your adapter doesn't model and for any default you inject that some server rejects.
 - **Streaming**: when `:lib/on-chunk` is present, call it with `{:type :text :text delta}` per text delta and still return the complete result. `clj-llm.http/post-json-lines` reduces over response lines (SSE and NDJSON both), and `clj-llm.http/sse-data` extracts SSE data payloads.
-- **Errors**: let `clj-llm.http`'s `:lib/http-error` propagate; throw `ex-info` with `{:type :lib/missing-api-key}` for configuration problems you detect yourself.
+- **Errors**: let `clj-llm.http`'s `:lib/http-error` and `:lib/network-error` propagate; throw `ex-info` with `{:type :lib/missing-api-key}` for configuration problems you detect yourself. The provider config carries `:lib/name` (the name it was registered under), which makes error messages point at the right config entry.
 - **Structure for testability**: keep pure `build-request` / `parse-response` functions separate from the multimethod, so your adapter tests need no HTTP at all. See `clj-llm.providers.ollama` for the compact reference implementation, and `book.demo` in this book's source for a no-HTTP test double.
 - **Embeddings, lifecycle**: implement `-embed!` if the provider has embeddings; implement `-start`/`-stop` (each `[provider-config opts]`) only if your adapter needs real state like OAuth token refresh. The integrant bindings call them on system start/halt.
 
