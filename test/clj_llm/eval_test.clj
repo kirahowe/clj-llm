@@ -1,6 +1,7 @@
 (ns clj-llm.eval-test
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
+            [clj-llm.core :as llm]
             [clj-llm.eval :as eval]
             [clj-llm.provider :as provider]))
 
@@ -58,6 +59,8 @@
       (is (= 0.0 (get-in summary [:by-variant :bad :scores :includes :mean])))
       (is (= 2 (get-in summary [:by-variant :good :cases])))
       (is (= 0 (get-in summary [:by-variant :good :errors])))
+      (is (= 2 (get-in summary [:by-variant :good :calls])))
+      (is (= ["model-a"] (get-in summary [:by-variant :good :models])))
       (is (= 20 (get-in summary [:by-variant :good :usage :input-tokens])))
       (is (number? (get-in summary [:by-variant :good :latency-ms :mean]))))
     (testing "results carry the full interaction record"
@@ -101,6 +104,27 @@
               {:concurrency 1})
     (is (= "terse" (:llm/system (first @seen))))
     (is (= 0.1 (:llm/temperature (first @seen))))))
+
+(deftest variant-request-keys
+  (is (= #:llm{:model :m :temperature 0.5}
+         (eval/variant->request #:llm{:id :v :model :m :temperature 0.5})))
+  (let [seen (atom [])]
+    (defmethod provider/-generate! ::variant-request-spy
+      [_ request _opts]
+      (swap! seen conj request)
+      {:message {:role :assistant :content "ok"} :model (:llm/model request)
+       :usage {} :finish-reason :stop :raw {}})
+    (eval/run #:llm{:providers {:s {:llm/adapter ::variant-request-spy}}
+                    :models {:m #:llm{:provider :s :model "m-1"}}
+                    :defaults #:llm{:model :m}}
+              #:llm{:cases [#:llm{:id :c}]
+                    :variants [#:llm{:id :v :model :m :temperature 0.25}]
+                    :scorers []
+                    :task (fn [{:keys [config variant]}]
+                            (llm/generate config (merge (eval/variant->request variant)
+                                                        #:llm{:prompt "q"})))}
+              {:concurrency 1})
+    (is (= 0.25 (:llm/temperature (first @seen))))))
 
 (deftest built-in-scorers
   (let [response #:llm{:text "The answer is Paris. "}]
@@ -149,11 +173,39 @@
     (is (= 0.75 (:score result)))
     (is (= "mostly right" (:reasoning result)))))
 
+(deftest judge-prompt-fn-hook
+  (let [seen (atom nil)]
+    (defmethod provider/-generate! ::judge-spy
+      [_ {:llm/keys [model messages]} _opts]
+      (reset! seen (:content (last (filter #(= :user (:role %)) messages))))
+      {:message {:role :assistant
+                 :content "{\"score\": 0.9, \"reasoning\": \"fits\"}"}
+       :model model :usage {} :finish-reason :stop :raw {}})
+    (let [config #:llm{:providers {:j {:llm/adapter ::judge-spy}}
+                       :models {:judge #:llm{:provider :j :model "judge-1"}}
+                       :defaults #:llm{:model :judge}}
+          scorer (eval/llm-judge {:model :judge :criteria "fit"
+                                  :prompt-fn (fn [{:keys [case response]}]
+                                               (str "DOMAIN:" (:domain/data case)
+                                                    " GOT:" (:llm/answer response)))})
+          result ((:llm/fn scorer) {:config config
+                                    :case #:llm{:id :c :domain/data "payload"}
+                                    :response #:llm{:answer "42"}})]
+      (is (= "DOMAIN:payload GOT:42" @seen))
+      (is (= 0.9 (:score result)))))
+  (testing "the public default judge-prompt"
+    (let [prompt (eval/judge-prompt {:criteria "Is it correct?"
+                                     :case #:llm{:input "q" :expected "42"}
+                                     :response #:llm{:text "42"}})]
+      (is (str/includes? prompt "Is it correct?"))
+      (is (str/includes? prompt "42")))))
+
 (deftest print-summary-renders
   (let [report (eval/run (lookup-config answers) suite {:concurrency 1})
         out (with-out-str (eval/print-summary report))]
     (is (str/includes? out "variant"))
     (is (str/includes? out "model"))
+    (is (str/includes? out "calls"))
     (is (str/includes? out ":good"))
     (is (str/includes? out "includes"))))
 
@@ -178,6 +230,25 @@
     (is (= 0 (get-in report [:llm/summary :by-variant :v :errors]))
         "the task ran without invoking the LLM adapter")
     (is (= 1.0 (get-in report [:llm/summary :by-variant :v :scores :includes :mean])))))
+
+(deftest custom-task-cases-need-no-input
+  (let [suite #:llm{:cases [#:llm{:id :c :expected "custom" :domain/data "payload"}]
+                    :variants [#:llm{:id :v}]
+                    :scorers []
+                    :task (fn [{:keys [case]}]
+                            #:llm{:text (:domain/data case)})}
+        config #:llm{:providers {:fake {:llm/adapter ::should-not-be-called}}
+                     :defaults {}}
+        report (eval/run config suite {:concurrency 1})]
+    (testing "a case with no :llm/input validates and runs under a custom task"
+      (is (= 1 (count (:llm/results report))))
+      (is (= "payload" (get-in (first (:llm/results report)) [:llm/response :llm/text]))))
+    (testing "the same suite without :llm/task fails validation"
+      (let [ex (try (eval/run config (dissoc suite :llm/task) {:concurrency 1})
+                    nil
+                    (catch Exception e e))]
+        (is (some? ex))
+        (is (= :llm/invalid-suite (:type (ex-data ex))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; :llm/thresholds — evals as a CI gate
@@ -218,3 +289,44 @@
         report (eval/run (lookup-config answers) suite {:concurrency 1})]
     (is (= 1.0 (get-in report [:llm/summary :by-variant :good :scores :scorer-0 :mean])))
     (is (= 1.0 (get-in report [:llm/summary :by-variant :bad :scores :scorer-0 :mean])))))
+
+;; ---------------------------------------------------------------------------
+;; Interaction collection — a task can make more than one LLM call
+
+(defmethod provider/-generate! ::two-calls
+  [_ {:llm/keys [model]} _opts]
+  {:message {:role :assistant :content "ok"} :model model
+   :usage {:input-tokens 10 :output-tokens 5} :finish-reason :stop :raw {}})
+
+(deftest interactions-collected-and-summarized
+  (let [config #:llm{:providers {:t {:llm/adapter ::two-calls}}
+                     :models {:m #:llm{:provider :t :model "model-t"}}
+                     :defaults #:llm{:model :m}}
+        suite #:llm{:cases [#:llm{:id :c}]
+                    :variants [#:llm{:id :v}]
+                    :scorers []
+                    :task (fn [{:keys [config]}]
+                            (llm/generate config #:llm{:prompt "one"})
+                            (llm/generate config #:llm{:prompt "two"})
+                            #:llm{:text "done"})}
+        report (eval/run config suite {:concurrency 1})
+        result (first (:llm/results report))
+        summary (get-in report [:llm/summary :by-variant :v])]
+    (is (= 2 (count (:llm/interactions result))))
+    (is (= 2 (:calls summary)))
+    (is (= {:input-tokens 20 :output-tokens 10} (:usage summary)))
+    (is (= ["model-t"] (:models summary)))
+    (is (number? (get-in summary [:latency-ms :mean])))))
+
+(deftest collector-chains-existing-hook
+  (let [outer (atom [])
+        config (assoc (lookup-config answers)
+                      :llm/defaults #:llm{:model :a
+                                          :on-interaction (fn [record] (swap! outer conj record))})
+        suite #:llm{:cases [#:llm{:id :capital :input "Capital of France?" :expected "Paris"}]
+                    :variants [#:llm{:id :good :model :a}]
+                    :scorers []}
+        report (eval/run config suite {:concurrency 1})
+        result (first (:llm/results report))]
+    (is (seq @outer) "the outer hook still received the record")
+    (is (seq (:llm/interactions result)) "the result also carries the record")))

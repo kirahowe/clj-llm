@@ -142,16 +142,16 @@
 ;; Eval suites
 
 (def Case
+  "Under the default task, a case must carry :llm/input or
+  :llm/messages (the Suite schema enforces this). Under a custom
+  :llm/task, a case is domain data — your own keys plus optional
+  :llm/expected and :llm/id — and needs neither."
   (m/schema
-   [:and
-    [:map
-     [:llm/id {:optional true} :keyword]
-     [:llm/input {:optional true} :string]
-     [:llm/messages {:optional true} [:sequential Message]]
-     [:llm/expected {:optional true} :any]]
-    [:fn {:error/message "needs :llm/input or :llm/messages"}
-     (fn [{:llm/keys [input messages]}]
-       (boolean (or input messages)))]]))
+   [:map
+    [:llm/id {:optional true} :keyword]
+    [:llm/input {:optional true} :string]
+    [:llm/messages {:optional true} [:sequential Message]]
+    [:llm/expected {:optional true} :any]]))
 
 (def Variant
   "A variant is :llm/id plus any generate request keys; extra
@@ -167,12 +167,16 @@
 
 (def Suite
   (m/schema
-   [:map
-    [:llm/cases [:sequential Case]]
-    [:llm/variants {:optional true} [:sequential Variant]]
-    [:llm/scorers {:optional true} [:sequential Scorer]]
-    [:llm/task {:optional true} [:or fn? qualified-symbol?]]
-    [:llm/thresholds {:optional true} [:map-of :keyword number?]]]))
+   [:and
+    [:map
+     [:llm/cases [:sequential Case]]
+     [:llm/variants {:optional true} [:sequential Variant]]
+     [:llm/scorers {:optional true} [:sequential Scorer]]
+     [:llm/task {:optional true} [:or fn? qualified-symbol?]]
+     [:llm/thresholds {:optional true} [:map-of :keyword number?]]]
+    [:fn {:error/message "every case needs :llm/input or :llm/messages when the suite has no :llm/task"}
+     (fn [{:llm/keys [task cases]}]
+       (boolean (or task (every? #(or (:llm/input %) (:llm/messages %)) cases))))]]))
 
 ;; ---------------------------------------------------------------------------
 ;; Validation

@@ -52,7 +52,7 @@
 
 (def report (eval/run config suite))
 
-;; `print-summary` renders the per-variant comparison (score means, error counts, the model that actually served each variant, latency and token totals):
+;; `print-summary` renders the per-variant comparison (score means, error counts, the models that actually served each variant, how many LLM calls were made, latency and token totals):
 
 (kind/code (with-out-str (eval/print-summary report)))
 
@@ -101,27 +101,53 @@
 
 ;; A judge's reply is parsed into `{:score ... :reasoning ...}`; unusable replies score 0.0 with an `:error`, so a misbehaving judge shows up in the numbers instead of vanishing.
 
+;; What the judge is *shown* matters as much as the rubric. The default prompt (`judge-prompt`, a public function) contains exactly three things: the case's `:llm/input`, its `:llm/expected`, and the response's `:llm/text`. When that isn't the whole story — structured responses, cases that carry domain data — pass `:prompt-fn` to build the prompt yourself. There's an example in the next section, where it matters most.
+
 ;; ## Evals for systems, not just calls
 
 ;; By default, a case×variant runs a single `generate` call. But the question you actually care about is usually one level up: is the whole *pipeline* good, retrieval plus prompt assembly plus the model plus post-processing? Point `:llm/task` at any function of `{:keys [config case variant]}` that returns a response-shaped map, and the same cases, scorers, thresholds and reports apply to the whole system:
 
 (defn faq-pipeline
   "A toy 'system': look up a canned document, then generate with it in the prompt. A real one would do retrieval, ranking, templating..."
-  [{:keys [config case]}]
+  [{:keys [config case variant]}]
   (let [doc "Support doc: to reset a password, click 'Forgot password' and follow the emailed reset link."]
     (llm/generate config
-                  #:llm{:system (str "Answer using this document:\n" doc)
-                        :prompt (:llm/input case)})))
+                  (merge (eval/variant->request variant)
+                         #:llm{:system (str "Answer using this document:\n" doc)
+                               :prompt (:llm/input case)}))))
 
-(-> (eval/run config
-              #:llm{:cases [#:llm{:id :password-reset
-                                  :input "How do I reset my password?"
-                                  :expected "reset link"}]
-                    :task faq-pipeline
-                    :scorers [:includes]})
-    :llm/summary)
+(def pipeline-report
+  (eval/run config
+            #:llm{:cases [#:llm{:id :password-reset
+                                :input "How do I reset my password?"
+                                :expected "reset link"}]
+                  :variants [#:llm{:id :smart :model :smart}
+                             #:llm{:id :fast :model :fast}]
+                  :task faq-pipeline
+                  :scorers [:includes]}))
 
-;; The task contract is thin on purpose: return at least `:llm/text` (or whatever your scorers read). Return real `generate` responses, as `faq-pipeline` does, and latency and token summaries stay accurate for free. Variants still work with a custom task: the variant map is passed to your task, so variants can select pipeline configurations, not just request keys. In EDN suites, `:llm/task` can be a qualified symbol.
+(:llm/summary pipeline-report)
+
+;; The task contract is thin on purpose — return a map your scorers can read, conventionally at least `:llm/text` — but two lines of `faq-pipeline` deserve attention, because each is a contract of its own.
+
+;; **Make your LLM calls with the config the task receives.** The runner installs an `:llm/on-interaction` collector in it, so every `generate` call inside the task — one here, but a pipeline might make five — is captured and attributed to its case×variant. The records ride along on each result under `:llm/interactions` (scorers receive them too, as `:interactions`), and the summary's models, call counts, latency and token totals are derived from them, so a task that makes three calls per case reports the cost of all three:
+
+(map :llm/model (:llm/interactions (first (:llm/results pipeline-report))))
+
+;; **Honor the variant.** The variant map is passed to your task, and the task decides what it means — which is exactly why `faq-pipeline` merges `(eval/variant->request variant)` (the variant minus its `:llm/id`) into its request. A variant key your task never forwards changes nothing: the run would execute identical code under two labels and render it as a real comparison. Forward everything you don't deliberately override.
+
+;; Two more freedoms follow from custom tasks. Cases no longer need `:llm/input` or `:llm/messages` at all — under a custom task, a case is your domain data (any keys you like) plus `:llm/expected` and `:llm/id`, and the schema blesses that shape. And the judge can see that domain data: the default judge prompt shows only `:llm/input`, `:llm/expected` and `:llm/text`, so give a structured task's judge a `:prompt-fn`:
+
+(kind/code
+ "(eval/llm-judge
+  {:model :smart
+   :criteria \"Every suggested slug must fit the article's actual topic.\"
+   :prompt-fn (fn [{:keys [criteria case response]}]
+                (str \"Criteria: \" criteria \"\\n\\n\"
+                     \"Article body:\\n\" (:article/body case) \"\\n\\n\"
+                     \"Suggested slugs: \" (pr-str (:slugs response))))})")
+
+;; In EDN suites, `:llm/task` can be a qualified symbol.
 
 ;; This is the sense in which evals here are "tests for LLM calls at the system level": the unit under test is whatever function you hand the harness, and a raw LLM call is merely the default.
 
@@ -134,7 +160,7 @@
 
 ;; ## Concurrency and cost
 
-;; `eval/run` takes `{:concurrency n}` (default 4) and runs cases in a fixed thread pool. Every result row carries its full response, including usage, so the report also tells you what the eval itself cost in tokens, and the summary totals make cost comparisons between models concrete.
+;; `eval/run` takes `{:concurrency n}` (default 4) and runs cases in a fixed thread pool. Every result row carries its full response and the interaction records behind it, so the report also tells you what the eval itself cost in tokens — summed over every call each task made — and the summary totals make cost comparisons between models concrete.
 
 ;; ## The workflow, end to end
 

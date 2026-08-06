@@ -33,7 +33,9 @@
             :llm/messages (a full conversation), optional
             :llm/expected (whatever your scorers need), and any custom
             keys your scorers read — unqualified and your-namespaced
-            keys are yours.
+            keys are yours. Under a custom :llm/task, a case needs
+            neither :llm/input nor :llm/messages — it is then your
+            domain data plus optional :llm/expected and :llm/id.
   Variants: :llm/id plus any generate request keys (:llm/model,
             :llm/system, :llm/temperature, :llm/tools, ...) — a
             variant IS the thing you are comparing.
@@ -41,11 +43,13 @@
             :matches), maps #:llm{:id kw :fn f}, bare fns, or
             qualified symbols (resolved with requiring-resolve, so EDN
             suites can name scorers defined in your code). A scorer
-            receives {:config ... :case ... :variant ... :response ...}
-            and returns a map with :score (0.0–1.0) plus anything else
-            worth keeping (e.g. :reasoning). Use (llm-judge {...}) for
-            model-graded scoring — the sensible default when there is no
-            mechanical ground truth.
+            receives {:config ... :case ... :variant ... :response ...
+            :interactions [...]} — :interactions is the vector of
+            interaction records collected from LLM calls the task made
+            — and returns a map with :score (0.0–1.0) plus anything
+            else worth keeping (e.g. :reasoning). Use (llm-judge {...})
+            for model-graded scoring — the sensible default when there
+            is no mechanical ground truth.
   Task:     :llm/task (a fn or qualified symbol) is what a case×variant
             actually runs — (fn [{:keys [config case variant]}]) returning
             a response map. The default task builds a request from the
@@ -53,8 +57,15 @@
             single LLM call. Supply your own task to eval any system
             *containing* LLM calls — a RAG pipeline, an agent loop, a
             whole handler — as long as it returns a map your scorers can
-            read (conventionally at least :llm/text; return real
-            generate responses and latency/usage summaries stay accurate).
+            read. Make your LLM calls with the config the task
+            receives: the runner installs an :llm/on-interaction
+            collector in it, so every generate call inside the task is
+            captured and attributed to its case×variant (results carry
+            them as :llm/interactions; summaries derive models, calls,
+            latency and usage from them). And honor the variant: merge
+            (variant->request variant) into each generate call —
+            variant keys the task ignores silently compare identical
+            runs.
   Thresholds: :llm/thresholds {scorer-id min-mean-score} makes the
             report (and the CLI exit code) fail when any variant's mean
             for that scorer drops below the minimum — evals as a CI
@@ -107,7 +118,12 @@
        "{\"score\": <number from 0.0 to 1.0>, \"reasoning\": \"<one sentence>\"} "
        "and nothing else."))
 
-(defn- judge-prompt [criteria case response]
+(defn judge-prompt
+  "The default llm-judge prompt: criteria, then the case's :llm/input
+  and :llm/expected when present, then the response's :llm/text.
+  Public so a custom :prompt-fn can wrap it — render your own domain
+  context, then append or replace this layout."
+  [{:keys [criteria case response]}]
   (str "Evaluate the RESPONSE below.\n\n"
        "Criteria: " criteria "\n\n"
        (when-let [input (:llm/input case)]
@@ -135,13 +151,25 @@
   (any model designator; defaults to the config's default model — using
   a different/stronger model than the one under test is wise). `:id`
   names the scorer in results (default :llm-judge; give each judge its
-  own :id when a suite uses several)."
-  [{:keys [model criteria id] :or {id :llm-judge}}]
+  own :id when a suite uses several).
+
+  `:prompt-fn` builds the judge's user prompt: a function of
+  {:criteria :config :case :variant :response} returning a string;
+  defaults to `judge-prompt`. The default shows the judge ONLY
+  :llm/input, :llm/expected and the response's :llm/text — so a custom
+  task with structured responses or domain-heavy cases should supply
+  `:prompt-fn`, otherwise the judge grades without seeing the domain
+  context."
+  [{:keys [model criteria id prompt-fn] :or {id :llm-judge prompt-fn judge-prompt}}]
   #:llm{:id id
-        :fn (fn [{:keys [config case response]}]
+        :fn (fn [{:keys [config case variant response]}]
               (let [reply (llm/generate config
                                         (cond-> #:llm{:system judge-system-prompt
-                                                      :prompt (judge-prompt criteria case response)}
+                                                      :prompt (prompt-fn {:criteria criteria
+                                                                          :config config
+                                                                          :case case
+                                                                          :variant variant
+                                                                          :response response})}
                                           model (assoc :llm/model model)))]
                 (parse-judge-reply (:llm/text reply))))})
 
@@ -171,6 +199,16 @@
     :else (throw (ex-info (str "Unsupported scorer: " (pr-str scorer))
                           {:type :llm/unknown-scorer :scorer scorer}))))
 
+(defn variant->request
+  "The request keys a variant carries — everything except :llm/id. The
+  default task merges these into its single generate call; a custom
+  task must do the same in every generate call it makes, e.g.
+  (llm/generate config (merge (variant->request variant) my-request)) —
+  a variant key the task never forwards changes nothing, and the run
+  compares identical code under two labels."
+  [variant]
+  (dissoc variant :llm/id))
+
 (defn case->request
   "The request the default task runs for a case × variant: the case's
   conversation with the variant's request keys merged in."
@@ -182,7 +220,7 @@
            :else (throw (ex-info (str "Case " (:llm/id case)
                                       " needs :llm/input or :llm/messages")
                                  {:type :llm/invalid-case :case case})))
-         (dissoc variant :llm/id)))
+         (variant->request variant)))
 
 (defn- default-task [{:keys [config case variant]}]
   (llm/generate config (case->request case variant)))
@@ -196,12 +234,26 @@
       :else (throw (ex-info (str "Unsupported :llm/task: " (pr-str task))
                             {:type :llm/invalid-suite :task task})))))
 
+(defn- collecting-config
+  "Wrap config so every generate/embed call made with it appends its
+  interaction record to `sink`, chaining to any hook the config already
+  had."
+  [config sink]
+  (let [outer (get-in config [:llm/defaults :llm/on-interaction])]
+    (assoc-in config [:llm/defaults :llm/on-interaction]
+              (fn [record]
+                (swap! sink conj record)
+                (when outer (outer record))))))
+
 (defn- run-one [config case variant scorers task]
-  (let [base #:llm{:case-id (:llm/id case) :variant-id (:llm/id variant)}]
+  (let [base #:llm{:case-id (:llm/id case) :variant-id (:llm/id variant)}
+        interactions (atom [])]
     (try
-      (let [response (task {:config config :case case :variant variant})
+      (let [response (task {:config (collecting-config config interactions)
+                            :case case :variant variant})
+            collected @interactions
             context {:config config :case case :variant variant
-                     :response response}
+                     :response response :interactions collected}
             scores (into {}
                          (map (fn [{scorer-id :llm/id scorer-fn :llm/fn}]
                                 [scorer-id
@@ -209,9 +261,10 @@
                                       (catch Exception e
                                         {:score 0.0 :error (ex-message e)}))]))
                          scorers)]
-        (assoc base :llm/response response :llm/scores scores))
+        (assoc base :llm/response response :llm/scores scores :llm/interactions collected))
       (catch Exception e
-        (assoc base :llm/error (ex-message e) :llm/ex-data (ex-data e))))))
+        (assoc base :llm/error (ex-message e) :llm/ex-data (ex-data e)
+               :llm/interactions @interactions)))))
 
 (defn- run-all [config jobs scorers task concurrency]
   (if (<= concurrency 1)
@@ -229,29 +282,46 @@
   (when (seq xs)
     (/ (reduce + 0.0 xs) (count xs))))
 
+(defn- result-records
+  "The interaction records behind one result: whatever the run collected
+  from calls inside the task, else the returned response itself when it
+  carries record keys (a task may hand back a record produced outside
+  the run's sight)."
+  [result]
+  (or (not-empty (:llm/interactions result))
+      (let [r (:llm/response result)]
+        (when (or (:llm/model r) (:llm/usage r) (:llm/latency-ms r))
+          [r]))))
+
 (defn summarize
-  "Aggregate eval results per variant: score means, error counts, token
-  usage, latency and the model that actually served the variant — the
+  "Aggregate eval results per variant from the interaction records
+  collected during each task run: LLM calls made (:calls), the models
+  that actually served them (:models), token usage summed over every
+  call, per-call latency, plus score means and error counts — the
   numbers to compare when deciding whether a model/prompt change is an
-  improvement."
+  improvement. Works the same whether a task makes one generate call
+  (the default task) or many."
   [results]
   {:by-variant
    (into {}
          (for [[variant-id variant-results] (group-by :llm/variant-id results)]
            (let [ok (remove :llm/error variant-results)
-                 score-ids (distinct (mapcat (comp keys :llm/scores) ok))]
+                 score-ids (distinct (mapcat (comp keys :llm/scores) ok))
+                 records (mapcat result-records ok)
+                 latencies (keep :llm/latency-ms records)]
              [variant-id
               {:cases (count variant-results)
                :errors (count (filter :llm/error variant-results))
-               :model (some #(get-in % [:llm/response :llm/model]) ok)
+               :calls (count records)
+               :models (vec (distinct (keep :llm/model records)))
                :scores (into {}
                              (for [scorer-id score-ids]
                                [scorer-id
                                 {:mean (mean (keep #(get-in % [:llm/scores scorer-id :score]) ok))}]))
-               :latency-ms {:mean (mean (keep #(get-in % [:llm/response :llm/latency-ms]) ok))
-                            :max (reduce max 0 (keep #(get-in % [:llm/response :llm/latency-ms]) ok))}
-               :usage {:input-tokens (reduce + 0 (keep #(get-in % [:llm/response :llm/usage :input-tokens]) ok))
-                       :output-tokens (reduce + 0 (keep #(get-in % [:llm/response :llm/usage :output-tokens]) ok))}}])))})
+               :latency-ms {:mean (mean latencies)
+                            :max (reduce max 0 latencies)}
+               :usage {:input-tokens (reduce + 0 (keep #(get-in % [:llm/usage :input-tokens]) records))
+                       :output-tokens (reduce + 0 (keep #(get-in % [:llm/usage :output-tokens]) records))}}])))})
 
 (defn- thresholds-met? [summary thresholds]
   (every? (fn [[_variant-id s]]
@@ -273,7 +343,9 @@
   Returns #:llm{:results [...] :summary {:by-variant {...}}
   :run-at <Instant> :passed? <bool, present when the suite has
   thresholds>} — plain data; print it with print-summary, diff it, or
-  store it next to the config that produced it."
+  store it next to the config that produced it. Each result carries
+  :llm/interactions, the interaction records collected from LLM calls
+  the task made while producing it."
   ([config suite] (run config suite nil))
   ([config suite {:keys [concurrency] :or {concurrency 4}}]
    (let [suite (spec/assert-suite!
@@ -308,11 +380,14 @@
   [{:llm/keys [summary]}]
   (let [by-variant (:by-variant summary)
         scorer-ids (->> (vals by-variant) (mapcat (comp keys :scores)) distinct sort)
-        headers (concat ["variant" "model" "cases" "errors"]
+        headers (concat ["variant" "model" "cases" "calls" "errors"]
                         (map name scorer-ids)
                         ["latency(mean ms)" "in-tok" "out-tok"])
         rows (for [[variant-id s] (sort-by key by-variant)]
-               (concat [(str variant-id) (fmt (:model s)) (str (:cases s)) (str (:errors s))]
+               (concat [(str variant-id)
+                        (let [models (:models s)]
+                          (if (seq models) (str/join "," models) "-"))
+                        (str (:cases s)) (str (:calls s)) (str (:errors s))]
                        (map #(fmt (get-in s [:scores % :mean])) scorer-ids)
                        [(fmt (some-> (get-in s [:latency-ms :mean]) long))
                         (fmt (get-in s [:usage :input-tokens]))

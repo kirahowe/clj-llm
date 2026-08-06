@@ -3,6 +3,57 @@ All notable changes to this project will be documented in this file. This change
 
 ## [Unreleased]
 
+Everything here comes from migrating the library's first real consumer —
+a custom `:llm/task` suite wrapping a two-call pipeline with structured
+results — onto the eval layer. Each entry closes a place where that
+layer still assumed a case is exactly one chat request.
+
+### Added
+- **Eval runs observe every LLM call a task makes.** The runner hands
+  each task a config whose `:llm/on-interaction` collects interaction
+  records (chaining any hook the config already had). Each result
+  carries the records as `:llm/interactions`, and scorers receive them
+  as `:interactions` in their context map. Multi-call tasks no longer
+  go dark in the report: there is no longer any need to return a real
+  generate response just to keep the summary numbers honest.
+- **`llm-judge` accepts `:prompt-fn`** — a function of
+  `{:criteria :config :case :variant :response}` returning the judge's
+  user prompt. The default, `judge-prompt` (now public, so a custom
+  `:prompt-fn` can wrap it), keeps today's layout: `:llm/input`,
+  `:llm/expected`, and the response's `:llm/text` — and *only* those,
+  which is why structured tasks and domain-heavy cases should supply
+  `:prompt-fn` rather than let the judge grade without seeing the
+  domain context.
+- **`variant->request`** — the variant minus `:llm/id`, for custom
+  tasks to merge into each generate call they make. A variant key the
+  task never forwards changes nothing (the run would compare identical
+  code under two labels), so the task docs now say loudly: honor the
+  variant, and this helper makes it one merge.
+
+### Changed
+- **Cases need `:llm/input`/`:llm/messages` only under the default
+  task.** A suite with a custom `:llm/task` may write cases as pure
+  domain data — your own keys plus optional `:llm/expected` and
+  `:llm/id` — with no display strings invented to appease validation.
+  Suites without `:llm/task` are validated exactly as before.
+- **Per-variant summaries aggregate over collected interaction
+  records** instead of reading keys off the task's return value:
+  `:model` becomes `:models` (every model that actually served the
+  variant), `:calls` counts the LLM calls made, latency is per call,
+  and usage sums every call the task made. When a run collected
+  nothing (e.g. a task built its response outside the run's sight),
+  the returned response still serves as the record, as before.
+  `print-summary` gains a `calls` column.
+
+### Migration notes
+- Commit `b3b8e4b` renamed the entire keyspace from `:lib/*` to
+  `:llm/*` ahead of the alpha release; the 0.1.0-alpha1 notes below
+  are written in the final `:llm/*` keyspace. A consumer pinned to an
+  earlier git SHA migrates mechanically (find/replace `:lib/` →
+  `:llm/`).
+- Anything reading `:model` from a per-variant summary (or a stored
+  report) now reads `:models`, a vector.
+
 ## [0.1.0-alpha1] — 2026-08-03
 
 Initial public alpha. The API is intended to be final; the alpha window

@@ -12,7 +12,7 @@ Everything here is *additive* (new keys, new options, new namespaces) because th
 
 **Report diffing.** Reports already carry provenance (`:llm/run-at`, counts, per-variant models). Planned: a helper that takes two stored reports and produces a comparison (score deltas per variant and scorer, latency and cost movement), so "did this week's model change help?" is one function call.
 
-**Task output contract for process scoring.** System-level tasks (`:llm/task`) currently return a response-shaped map and scorers grade the final text. For grading *process* (did retrieval find the right document, how many tool rounds were taken), a reserved place for intermediate artifacts on the task's return value (e.g. `:llm/trace`) would let scorers see inside the pipeline without each project inventing its own convention.
+**Task output contract for process scoring.** Scorers already see every LLM call a task made (the `:interactions` in their context map), which covers the model side of grading *process*. What remains is the non-LLM side — did retrieval find the right document, what did the ranker drop — where a reserved place for intermediate artifacts on the task's return value (e.g. `:llm/trace`) would let scorers see inside the pipeline without each project inventing its own convention.
 
 ## Core
 
