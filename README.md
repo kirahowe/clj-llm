@@ -1,5 +1,13 @@
 # clj-llm
 
+> [!IMPORTANT]
+> This library is under development and still being dogfooded. The documentation
+below is AI-generated and not reviewed yet.
+> Feel free to use or explore (and if you do please let me know what issues you
+> run into!), but please know this is mostly here for the sake of building in
+public and not considered ready for release yet.
+
+
 A small, functional Clojure library for calling large language models —
 any model, from any provider, including local ones — with evals built in
 from the ground up. The premise: you can't build well with LLMs unless
