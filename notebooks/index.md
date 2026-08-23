@@ -1,57 +1,116 @@
 # clj-llm {.unnumbered}
 
-A small, functional Clojure library for calling large language models, with evals built in. It works with any model from any provider, including local ones.
+One small Clojure API for Anthropic, OpenAI-compatible providers, and Ollama. Generate text, stream responses, call tools, request structured data, and compare models with evals.
 
-The premise: you can't build well with LLMs unless measuring what they do is as easy as calling them. Most LLM libraries treat evaluation as someone else's problem; here every response is already a replayable interaction record, and turning a folder of real interactions into a scored comparison of models, prompts, or whole pipelines is a one-liner.
+## Get a response in a few minutes
 
-## What it looks like
+Add clj-llm to `deps.edn`:
+
+```clojure
+{:deps {com.kirahowe/clj-llm {:mvn/version "0.1.0-alpha1"}}}
+```
+
+Create `llm.edn`:
+
+```clojure
+#:llm{:providers
+      {:anthropic {:llm/adapter :anthropic
+                   :api-key #env ANTHROPIC_API_KEY}}
+      :models
+      {:default #:llm{:provider :anthropic
+                      :model "claude-sonnet-4-6"}}
+      :defaults #:llm{:model :default}}
+```
+
+Set your API key, start a REPL, and ask a question:
+
+```sh
+export ANTHROPIC_API_KEY="..."
+clojure
+```
 
 ```clojure
 (require '[clj-llm.core :as llm])
 
 (def config (llm/read-config "llm.edn"))
 
-(llm/generate config "Why is the sky blue?")
-;; => #:llm{:text "Sunlight scattering..." :usage {...} :latency-ms 640 ...}
+(-> (llm/generate config "Why is the sky blue?")
+    :llm/text)
+;; => "Sunlight is scattered by gases in the atmosphere..."
 ```
 
-And the part the library is built around:
+That is the main API: pass a config and a prompt to `generate`, then read the answer from `:llm/text`. The full response also includes the conversation, model, token use, finish reason, latency, and original provider response.
+
+See [Getting started](getting_started.qmd) to configure OpenAI-compatible services or Ollama, select models, request structured data, and create embeddings.
+
+## Common tasks
+
+Continue a conversation by passing its messages back in:
+
+```clojure
+(def first-answer
+  (llm/generate config "Name a prime number between 100 and 200."))
+
+(llm/generate config
+              {:llm/messages (:llm/messages first-answer)
+               :llm/prompt "Why is it prime?"})
+```
+
+Stream text as it arrives:
+
+```clojure
+(llm/generate config "Tell me a short story."
+              {:llm/on-chunk
+               (fn [{:keys [type text]}]
+                 (when (= :text type)
+                   (print text)
+                   (flush)))})
+```
+
+Ask for data that follows a JSON Schema:
+
+```clojure
+(llm/generate
+ config
+ "Give me three names for a coffee shop."
+ {:llm/response-format
+  {:type :json-schema
+   :name "coffee_shop_names"
+   :schema {:type "object"
+            :properties {:names {:type "array"
+                                 :items {:type "string"}}}
+            :required ["names"]}}})
+;; => #:llm{:structured {:names ["..." "..." "..."]} ...}
+```
+
+Run the same cases against different models or prompts:
 
 ```clojure
 (require '[clj-llm.eval :as eval])
 
-(eval/print-summary (eval/run config "evals/suite.edn"))
-;; variant    model              cases  errors  includes  latency(mean ms)  in-tok  out-tok
-;; ---------  -----------------  -----  ------  --------  ----------------  ------  -------
-;; :baseline  claude-sonnet-4-6  3      0       1.000     642               118     57
-;; :cheap     llama-3.3-70b      3      0       0.667     97                118     41
+(-> (eval/run config
+              #:llm{:cases [#:llm{:id :capital
+                                  :input "What is the capital of France?"
+                                  :expected "Paris"}]
+                    :variants [#:llm{:id :default :model :default}]
+                    :scorers [:includes]})
+    eval/print-summary)
 ```
 
-## Principles
+## Start with a complete example
 
-- **Stateless and functional.** There are no client objects, sessions, or global state. Every function takes a config map and returns data, so the same calls work in a web handler, a CLI, a background job, or the REPL.
-- **Config is data.** Providers, model aliases and defaults live in an EDN file read with [aero](https://github.com/juxt/aero); API keys come from the environment via `#env`. Code names intents (`:smart`, `:fast`); config decides what they mean.
-- **Conversations are data.** A conversation is a vector of message maps; multi-turn means passing the previous messages back in.
-- **Evals are first class.** Suites are EDN, scorers are functions, reports are maps, and thresholds can gate CI. The thing under test can be a single call or your whole system.
-- **One protocol away from any provider.** Adapters are multimethods; the OpenAI-compatible adapter alone covers most of the hosted and self-hosted ecosystem.
-- **Compatible forever.** The keyspace is partitioned so your keys can never collide with the library's, every contract has a malli schema, and the compatibility promises are documented in the [design chapter](notebooks/design.md).
+The [Examples](notebooks/examples.md) chapter has three small programs you can run from this repository:
 
-## Installation
+- a one-shot command-line prompt;
+- a streaming terminal chat;
+- a Ring HTTP endpoint.
 
-Not yet on Clojars. Use it as a git dependency:
+## What clj-llm keeps simple
 
-```clojure
-;; deps.edn
-{:deps {com.kirahowe/clj-llm {:git/url "https://github.com/kirahowe/clj-llm"
-                            :git/sha "..."}}}
-```
+- There are no client or chat objects. Config, requests, conversations, and responses are Clojure data.
+- The same functions work in a REPL, command-line program, web handler, or background job.
+- Model aliases keep provider and model names in config instead of application code.
+- Every call records the request, response, token use, and timing needed for later evaluation.
+- Eval suites, scorers, reports, and CI thresholds are part of the library.
 
-Dependencies are deliberately light: [aero](https://github.com/juxt/aero), [cheshire](https://github.com/dakrone/cheshire) and [malli](https://github.com/metosin/malli); HTTP uses the JDK's built-in `java.net.http` client.
-
-## One rule before the examples
-
-Every key the library defines in maps you author or store (config, requests, responses, eval suites, reports) is namespaced `:llm/...`. Any other key in those maps is yours, forever. Conversation-shaped structures (messages, tool definitions, tool calls, usage, stream chunks, scores) keep their plain industry-standard keys (`:role`, `:content`, `:score`, ...), and *that* plain keyspace is reserved by the library. Clojure's namespaced-map literal keeps the qualified form light: `#:llm{:prompt "hi" :model :fast}`.
-
-## How this book runs
-
-Every code example in the `.clj` chapters is evaluated when the book is rendered. To keep that deterministic and offline, the examples run against a canned in-process adapter (`book.demo`) whose config is shaped exactly like a real one. Swap in `(llm/read-config "llm.edn")` and the same code talks to real providers.
+clj-llm is currently an alpha. The public API may still change before `0.1.0`.

@@ -1,6 +1,6 @@
 # Writing a provider adapter
 
-The three built-in adapters cover Anthropic, everything that speaks the OpenAI chat-completions protocol, and Ollama's native API. If you need another wire protocol (a niche provider, an internal gateway, a test double), an adapter is a page of code: multimethod implementations dispatching on the `:llm/adapter` key of a provider config map.
+The built-in adapters cover Anthropic, OpenAI's Chat Completions API and compatible services, and Ollama's native API. Add an adapter when you need another provider API, an internal gateway, or a test double. Adapters are multimethod implementations selected by `:llm/adapter` in provider config.
 
 ## The minimum viable adapter
 
@@ -27,7 +27,11 @@ The three built-in adapters cover Anthropic, everything that speaks the OpenAI c
      :raw body}))
 ```
 
-Register it in config like any built-in:
+Require the adapter namespace when your application starts, then register its keyword in config:
+
+```clojure
+(require 'my.app.adapters.acme)
+```
 
 ```clojure
 #:llm{:providers {:acme {:llm/adapter :acme
@@ -35,11 +39,11 @@ Register it in config like any built-in:
                          :api-key #env ACME_API_KEY}}}
 ```
 
-That's the whole job: `generate` resolves the provider, applies defaults, runs the tool loop, and builds the interaction record. Your adapter only translates one normalized request into one wire call and one normalized result back.
+`generate` resolves the provider and model, applies defaults, runs the tool loop, and builds the final response record. The adapter translates one normalized request into one provider call and normalizes the result.
 
 ## The contract
 
-`clj-llm.provider` splits into an SPI and an API, the same shape as Integrant's `init-key`/`init`: you *implement* the `-`-prefixed multimethods, and code *calls* the unprefixed functions (`provider/generate!` etc.), where the trailing `opts` map is optional. Your `-generate!` receives three arguments: the raw provider config (so your own keys like `:api-key` flow through untouched), the normalized request, and a reserved `opts` map (empty today; accept and ignore it):
+Implement the `-`-prefixed multimethods in `clj-llm.provider`. Callers use the unprefixed wrappers such as `provider/generate!`, whose final `opts` argument is optional. `-generate!` receives the configured provider map with an added `:llm/name`, the normalized request, and an `opts` map. Accept `opts` even when your adapter does not use it:
 
 ```clojure
 #:llm{:model       "model-id"         ; already resolved to a string
@@ -48,6 +52,7 @@ That's the whole job: `generate` resolves the provider, applies defaults, runs t
       :max-tokens  4096               ; optional
       :temperature 0.7                ; optional
       :tools       [{:name ... :description ... :parameters ... :fn ...}]
+      :response-format {:type :json-schema :name "name" :schema {...}} ; optional
       :on-chunk    (fn [{:keys [type text]}] ...)  ; optional; emit {:type :text :text delta}
       :options     {...}}             ; provider-specific passthrough; merge into your wire body last
 ```
@@ -62,14 +67,15 @@ And returns:
  :raw           <parsed wire response>}
 ```
 
-Conventions the built-ins follow, worth copying:
+Follow these rules:
 
-- **Honor `:llm/options` by applying it to the wire body last**, via `provider/merge-options`: non-nil values override what you built, nil values remove the key. It's the user's escape hatch both for anything your adapter doesn't model and for any default you inject that some server rejects.
+- **Apply `:llm/options` to the provider request last** with `provider/merge-options`. Non-nil values override fields and nil values remove them.
+- **Declare structured response support** by implementing `(provider/-supports? provider-config :json-schema-response opts)` and returning true. The `opts` map contains `{:request normalized-request}`, so support may depend on the request or model. The default is false, and provider config under `:llm/capabilities` overrides the adapter. Translate the response-format wrapper without changing its `:schema`; core parses the final JSON. Apply `:llm/options` after adding the provider's structured-output field.
 - **Streaming**: when `:llm/on-chunk` is present, call it with `{:type :text :text delta}` per text delta and still return the complete result. `clj-llm.http/post-json-lines` reduces over response lines (SSE and NDJSON both), and `clj-llm.http/sse-data` extracts SSE data payloads.
 - **Errors**: let `clj-llm.http`'s `:llm/http-error` and `:llm/network-error` propagate; throw `ex-info` with `{:type :llm/missing-api-key}` for configuration problems you detect yourself. The provider config carries `:llm/name` (the name it was registered under), which makes error messages point at the right config entry.
-- **Structure for testability**: keep pure `build-request` / `parse-response` functions separate from the multimethod, so your adapter tests need no HTTP at all. See `clj-llm.providers.ollama` for the compact reference implementation, and `book.demo` in this book's source for a no-HTTP test double.
+- **Keep request building and response parsing separate from HTTP** so they can be tested without a server. `clj-llm.providers.ollama` is the shortest built-in example.
 - **Embeddings, lifecycle**: implement `-embed!` if the provider has embeddings; implement `-start`/`-stop` (each `[provider-config opts]`) only if your adapter needs real state like OAuth token refresh. The integrant bindings call them on system start/halt.
 
 ## What clj-llm promises your adapter
 
-The compatibility rules (also in the `clj-llm.provider` docstring): new request keys are additive and ignorable; new result keys are always optional; the SPI signatures are frozen, so anything new travels inside `request` or `opts`, never as a new positional argument; and any future SPI multimethod ships with a `:default`, so your adapter never has to change just to keep loading. An adapter written today is an adapter that works in every future version.
+From `0.1.0` onward, new request keys will be optional for adapters, new result keys will be optional for callers, and the adapter method signatures will not gain positional arguments. New context will travel inside `request` or `opts`. Any new adapter multimethod will have a default implementation. `-supports?` already follows that rule and defaults to false.

@@ -1,14 +1,16 @@
 ;; # Tools
 
+^{:kindly/hide-code true}
 (ns tools
   (:require [clj-llm.core :as llm]
             [book.demo :as demo]))
 
+^{:kindly/hide-code true}
 (def config demo/config)
 
 ;; ## Tools are maps; the loop is automatic
 
-;; A tool is a map: a `:name` and `:description` for the model, a `:parameters` JSON-schema map describing the arguments, and, if you want clj-llm to run it, a `:fn`. When every tool the model calls has a `:fn`, the library invokes it with the parsed arguments (keyword keys), appends the result to the conversation as a `:tool` message, and asks the model again, looping until the model answers or `:llm/max-tool-rounds` (default 10) is hit:
+;; A tool is a map with a `:name`, a `:description`, and a JSON Schema under `:parameters`. Add a `:fn` if you want clj-llm to run it. When every requested tool has a matching function, clj-llm calls those functions with keywordized arguments, adds their results to the conversation, and asks the model to continue. The loop stops when the model answers or reaches `:llm/max-tool-rounds`, which defaults to 10:
 
 (def weather-tool
   {:name "get-weather"
@@ -24,11 +26,11 @@
 
 (:llm/text r)
 
-;; The full exchange is visible in the messages (user, the assistant's tool call, the tool result, and the final answer) because tool rounds are ordinary messages in the conversation, not hidden machinery:
+;; The response messages contain the full exchange: the user prompt, assistant tool call, tool result, and final answer:
 
 (mapv :role (:llm/messages r))
 
-;; The assistant's tool-call message and the tool-result message are plain data too. Note the shapes: a tool call is `{:id ... :name ... :arguments {...}}` on the assistant message, and the result travels back as `{:role :tool :tool-call-id ... :content ...}`:
+;; A tool call is `{:id ... :name ... :arguments {...}}` on the assistant message. Its result is a `{:role :tool :tool-call-id ... :content ...}` message:
 
 (filter #(#{:assistant :tool} (:role %)) (butlast (:llm/messages r)))
 
@@ -38,7 +40,7 @@
 
 ;; ## Taking the loop into your own hands
 
-;; Omit `:fn` and clj-llm stays out of the way: the call returns with `:llm/finish-reason :tool-calls` and the pending calls under `:llm/tool-calls`, and continuing is your responsibility. This is the right shape when tool execution needs human approval, a queue, budget checks, or your own agent loop:
+;; Omit `:fn` to handle calls yourself. The response uses `:llm/finish-reason :tool-calls` and puts pending calls under `:llm/tool-calls`. This is useful when execution needs approval, a queue, budget checks, or a custom loop:
 
 (def pending (llm/generate config "What's the weather in Berlin?"
                            {:llm/tools [(dissoc weather-tool :fn)]}))
@@ -57,4 +59,4 @@
   (:llm/text (llm/generate config {:llm/messages messages
                                    :llm/tools [(dissoc weather-tool :fn)]})))
 
-;; Both styles produce the same message shapes, so you can start with the automatic loop and graduate to a manual one (or mix them per tool call) without changing how conversations are stored or evaluated. The evals chapter shows how a tool-using pipeline gets scored just like a plain call: with `:llm/tools` on a variant, or the whole loop inside an `:llm/task`.
+;; Automatic and manual handling use the same message shapes. Handling is decided for the whole batch of calls returned by a model: if any requested tool has no matching `:fn`, clj-llm returns the pending calls without running any of them. The evals chapter shows how to score a tool-using request with `:llm/tools` on a variant, or a custom loop inside `:llm/task`.

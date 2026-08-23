@@ -5,6 +5,7 @@
 
 (def chapters
   ["getting_started.clj"
+   "examples.md"
    "conversations_and_streaming.clj"
    "tools.clj"
    "evals.clj"

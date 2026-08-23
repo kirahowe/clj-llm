@@ -1,31 +1,31 @@
 # Roadmap
 
-Everything here is *additive* (new keys, new options, new namespaces) because the compatibility promises in the design chapter forbid anything else. Items are roughly ordered by how much they'd improve the eval workflow.
+These are possible additions after the alpha. They are not part of the current API.
 
 ## Evals
 
-**Response caching.** Re-running a suite after editing only a scorer should not re-pay for every LLM call. Planned shape: a `:cache` option on `eval/run` (and possibly on `generate` itself) taking a user-supplied get/put pair keyed on the resolved request, so the cache store is yours (atom, disk, Redis) and reproducibility comes free. This matters as suites grow from ten cases to a thousand.
+**Response caching.** Reuse model responses when only scorers changed. A future `:cache` option could accept user-provided read and write functions, leaving storage in the application.
 
-**EDN-expressible judges.** `llm-judge` returns a closure, so pure-EDN suite files can't use it today (code-constructed suites can). Planned: a recognized data form in `:llm/scorers`, `{:llm-judge {:model :smart :criteria "..." :id :grounded}}`, expanded by the runner.
+**LLM judges in EDN.** `llm-judge` returns a function, so it cannot be written directly in an EDN suite today. A future scorer form could describe the judge as data.
 
-**Per-case weights and richer thresholds.** A `:llm/weight` on cases for weighted means; threshold forms beyond per-scorer minimums (per-variant, min-per-case, max-regression-vs-baseline).
+**Case weights and more thresholds.** Add weighted means, thresholds for individual variants or cases, and limits on regression from a baseline.
 
-**Report diffing.** Reports already carry provenance (`:llm/run-at`, counts, per-variant models). Planned: a helper that takes two stored reports and produces a comparison (score deltas per variant and scorer, latency and cost movement), so "did this week's model change help?" is one function call.
+**Report comparison.** Compare two stored reports by score, latency, and token use.
 
-**Task output contract for process scoring.** Scorers already see every LLM call a task made (the `:interactions` in their context map), which covers the model side of grading *process*. What remains is the non-LLM side — did retrieval find the right document, what did the ranker drop — where a reserved place for intermediate artifacts on the task's return value (e.g. `:llm/trace`) would let scorers see inside the pipeline without each project inventing its own convention.
+**Task traces.** Scorers receive the model interactions made by a task, but not steps such as retrieval or ranking. A standard trace value could expose those steps to scorers.
 
 ## Core
 
-**Multimodal content parts.** The message spec reserves vector-of-typed-parts content. Image input is the likely first part type; it arrives as new part maps and new adapter capabilities, with string content remaining valid forever.
+**Multimodal messages.** Add supported content parts for images and later other media. String content will remain valid.
 
-**New chunk types.** Tool-call deltas and thinking/reasoning streams as new `:type` values on `:llm/on-chunk` payloads. The type-tag contract exists so these can ship without breaking anyone.
+**New stream chunk types.** Add tool-call deltas and any supported provider reasoning output as new `:type` values.
 
-**Retries and rate-limit handling.** Deliberately absent today (a library that silently retries is a library that silently triples your bill). If added, it will be explicit opt-in config on a provider, and `:llm/http-error` ex-data will grow (optional) retry metadata.
+**Retries and rate limits.** Retries are not automatic today because they can increase cost. Any future retry behavior will require explicit configuration.
 
-**Async variants.** `generate` is synchronous by design; an async entry point (CompletableFuture or callback-based) would be a new function, not a change to `generate`.
+**Asynchronous calls.** `generate` is synchronous. Asynchronous support would use a new function.
 
 ## Explicitly not planned
 
-- **Prompt templating.** String building is Clojure's job; suites and variants already cover comparing prompts.
-- **Agent frameworks.** The manual tool loop is the extension point; frameworks can build on it.
-- **A client object.** Statelessness is the feature.
+- **Prompt templating.** Build prompt strings with ordinary Clojure functions.
+- **An agent framework.** Applications and other libraries can build on manual tool handling.
+- **A client object.** Public operations will continue to accept config maps.

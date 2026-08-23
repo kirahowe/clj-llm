@@ -13,7 +13,7 @@
     #"(?i)story" "Once upon a time, a parenthesis opened. Everything since is still in scope."
     #"(?i)mitochondria" "The mitochondria converts nutrients into ATP, powering the cell."
     #"(?i)reset.*password" "Click \"Forgot password\" on the sign-in page and we'll email you a reset link."
-    (str "A canned demo answer to: " text)))
+    (str "Example answer to: " text)))
 
 (defn- last-user-text [messages]
   (:content (last (filter #(= :user (:role %)) messages))))
@@ -33,7 +33,7 @@
      :model (:llm/model request)
      :usage {:input-tokens (+ 8 words) :output-tokens (count (str/split text #"\s+"))}
      :finish-reason :stop
-     :raw {:demo true}}))
+     :raw {:id "example-response"}}))
 
 (defmethod provider/-generate! :demo
   [_provider-config request _opts]
@@ -46,10 +46,16 @@
      :model (:llm/model request)
      :usage {:input-tokens 21 :output-tokens 9}
      :finish-reason :tool-calls
-     :raw {:demo true}}
-    (if-let [tool-result (:content (last (filter #(= :tool (:role %)) (:llm/messages request))))]
-      (respond request (str "According to the tool, conditions are: " tool-result))
-      (respond request (canned-answer (last-user-text (:llm/messages request)))))))
+     :raw {:id "example-tool-call"}}
+    (if (:llm/response-format request)
+      (respond request "{\"capital\":\"Paris\",\"confidence\":1.0}")
+      (if-let [tool-result (:content (last (filter #(= :tool (:role %)) (:llm/messages request))))]
+        (respond request (str "According to the tool, conditions are: " tool-result))
+        (respond request (canned-answer (last-user-text (:llm/messages request))))))))
+
+(defmethod provider/-supports? :demo
+  [_provider-config capability _opts]
+  (= :json-schema-response capability))
 
 (defmethod provider/-embed! :demo
   [_provider-config request _opts]
@@ -57,13 +63,14 @@
     {:embeddings (mapv embed (:llm/input request))
      :model (:llm/model request)
      :usage {:input-tokens (reduce + (map #(count (str/split % #"\s+")) (:llm/input request)))}
-     :raw {:demo true}}))
+     :raw {:id "example-embedding"}}))
 
 (def config
   "A config shaped exactly like a real one, pointing at the :demo adapter. Swap this for (llm/read-config \"llm.edn\") and every example in the book runs against your real providers."
-  #:llm{:providers {:demo {:llm/adapter :demo}}
-        :models {:smart #:llm{:provider :demo :model "demo-smart-1"}
-                 :fast #:llm{:provider :demo :model "demo-fast-1"}
-                 :embeddings #:llm{:provider :demo :model "demo-embed-1"}}
+  #:llm{:providers {:anthropic {:llm/adapter :demo}
+                    :ollama {:llm/adapter :demo}}
+        :models {:smart #:llm{:provider :anthropic :model "claude-sonnet-4-6"}
+                 :fast #:llm{:provider :ollama :model "llama3.2"}
+                 :embeddings #:llm{:provider :ollama :model "nomic-embed-text"}}
         :defaults #:llm{:model :smart
                         :embedding-model :embeddings}})

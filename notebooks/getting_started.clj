@@ -1,14 +1,15 @@
 ;; # Getting started
 
-;; This chapter walks from an empty project to a first response, and then takes the response map apart. Everything on this page executes when the book is rendered, against the canned `book.demo` provider, so it runs offline. With a real config the code is identical.
+;; Start here for provider configuration, requests, model selection, structured responses, embeddings, and errors.
 
+^{:kindly/hide-code true}
 (ns getting-started
   (:require [clj-llm.core :as llm]
             [book.demo :as demo]))
 
 ;; ## Configuration
 
-;; clj-llm is configured by a plain EDN map, conventionally kept in a file called `llm.edn` and read with [aero](https://github.com/juxt/aero), which gives you `#env` for secrets, `#profile` for per-environment values, `#or` for fallbacks, and the rest of aero's tag set. A realistic config looks like this:
+;; clj-llm reads configuration from an EDN file, usually named `llm.edn`. It uses [aero](https://github.com/juxt/aero), so API keys can come from `#env`, environment-specific values from `#profile`, and fallback values from `#or`.
 
 ;; ```clojure
 ;; #:llm{:providers
@@ -27,7 +28,9 @@
 ;;             :max-tokens #profile {:dev 1024 :default 4096}}}
 ;; ```
 
-;; Three ideas are packed in there. **Providers** are accounts or endpoints: an Anthropic account, a Groq account, an Ollama server on your LAN. Each names an **adapter** (`:llm/adapter`), which is the wire protocol to speak; the `:openai` adapter covers every OpenAI-compatible service, which is most of them, so two providers often share one adapter. **Model aliases** let application code ask for an intent (`:smart`, `:fast`) while the config decides which vendor and model that currently means; swapping providers is a config edit, not a code change. Within a provider map, everything other than `:llm/adapter` (like `:api-key` and `:base-url`) belongs to that adapter and flows through untouched.
+;; A provider is an account or endpoint, such as an Anthropic account, a Groq account, or an Ollama server. Its `:llm/adapter` tells clj-llm how to call it. The `:openai` adapter works with OpenAI and services that implement the OpenAI Chat Completions API.
+
+;; Model aliases such as `:smart` and `:fast` keep provider names and model ids out of application code. Changing an alias in config changes the model without changing a call site. Unqualified provider settings such as `:api-key` and `:base-url` are passed to the adapter. Keys under `:llm/...`, including `:llm/adapter` and optional `:llm/capabilities`, belong to clj-llm.
 
 ;; Load a config file with `llm/read-config` (aero options such as `:profile` pass through):
 
@@ -36,43 +39,63 @@
 ;; (def config (llm/read-config "llm.edn" {:profile :dev}))
 ;; ```
 
-;; The result is just a map, and nothing downstream cares where it came from: hand-written maps, aero, or an integrant system key all work identically. For this book we use the demo config, which is shaped exactly like the real one above but points at a canned in-process adapter:
+;; `read-config` returns a map. You can also build that map yourself or provide it through Integrant.
 
+^{:kindly/hide-code true}
 (def config demo/config)
 
 ;; ## The first call
 
-;; `generate` is the whole API for text: config in, prompt in, response map out. A plain string is a zero-shot prompt:
+;; Pass a prompt string to `generate` and it returns a response map:
 
 (llm/generate config "What is the capital of France?")
 
-;; That map is worth reading carefully, because it is the library's central data structure. The library's keys are all namespaced `:llm/...` (any other key in maps you build or store is yours forever; see the design chapter), and the interesting ones are:
+;; The most useful response keys are:
 
-;; - `:llm/text`: the reply, as a string. This is the accessor to reach for; it stays stable even as message internals grow richer.
-;; - `:llm/messages`: the full conversation including the reply, as plain `{:role ... :content ...}` maps. Conj your next user message onto this to continue the conversation.
+;; - `:llm/text`: the reply as a string.
+;; - `:llm/messages`: the conversation including the reply. Pass these messages into another call to continue it.
 ;; - `:llm/usage`: `{:input-tokens n :output-tokens n}`; with tool use, summed over all rounds.
-;; - `:llm/finish-reason`: `:stop`, `:length`, `:tool-calls`, `:refusal`, ... an open set, so handle unknown keywords gracefully.
-;; - `:llm/request`, `:llm/latency-ms`, `:llm/started-at`, `:llm/op`: the response doubles as a complete, replayable *interaction record*. This is the foundation the eval system builds on, and the evals chapter picks it up from here.
+;; - `:llm/finish-reason`: commonly `:stop`, `:length`, `:tool-calls`, or `:refusal`. Providers may return other values.
+;; - `:llm/request`, `:llm/latency-ms`, `:llm/started-at`, `:llm/op`: a record of what was called and how long it took. Tool functions are omitted from the stored request; add them again before replaying a tool-using request.
 ;; - `:llm/raw`: the provider's parsed wire response, when you need something the normalized keys don't carry.
 
 ;; ## Requests beyond a string
 
-;; A request can be a map. `:llm/prompt` appends a user message to `:llm/messages` — with no messages it's simply the prompt, and alongside messages it's the next conversational turn; `:llm/system`, `:llm/max-tokens` and `:llm/temperature` do what they say; the namespaced-map literal `#:llm{...}` keeps it tidy:
+;; Use a request map when you need more than a prompt. `:llm/prompt` adds a user message, while `:llm/system`, `:llm/max-tokens`, and `:llm/temperature` control the request. The namespaced-map form `#:llm{...}` is shorthand for keys such as `:llm/prompt`:
 
 (llm/generate config #:llm{:system "You are terse."
                            :prompt "Why is the sky blue?"
                            :max-tokens 200
                            :temperature 0.2})
 
-;; A third argument merges into the request, which is the idiomatic way to tweak one thing per call site:
+;; The optional third argument is merged into the request. It is useful for changing one setting at a call site:
 
 (llm/generate config "What is 17 * 23?" {:llm/model :fast})
 
-;; Models can be picked per call three ways: an alias keyword from config, a `"provider/model-id"` string (split on the first slash, so model ids containing slashes work), or an explicit map:
+;; Select a model with a config alias, a `"provider/model-id"` string, or an explicit provider/model map:
 
-(:llm/model (llm/generate config "hi" {:llm/model "demo/demo-custom-7"}))
+(:llm/model (llm/generate config "hi" {:llm/model "ollama/qwen3:8b"}))
 
-(:llm/model (llm/generate config "hi" {:llm/model #:llm{:provider :demo :model "demo-inline-2"}}))
+(:llm/model (llm/generate config "hi" {:llm/model #:llm{:provider :anthropic :model "claude-haiku-4-5"}}))
+
+;; ## Structured responses
+
+;; Use `:llm/response-format` to ask for a JSON response with a particular shape. clj-llm sends the schema to the provider unchanged. Providers and models support different parts of JSON Schema, so check the current [OpenAI](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create), [Anthropic](https://platform.claude.com/docs/en/build-with-claude/structured-outputs), or [Ollama](https://docs.ollama.com/capabilities/structured-outputs) documentation when a schema is rejected.
+
+(llm/generate
+ config
+ "Return the capital of France and your confidence."
+ {:llm/response-format
+  {:type :json-schema
+   :name "capital_answer"
+   :schema {:type "object"
+            :properties {:capital {:type "string"}
+                         :confidence {:type "number"}}
+            :required ["capital" "confidence"]}}})
+
+;; The original JSON remains in `:llm/text`, and the decoded value is in `:llm/structured`. Object keys become Clojure keywords. clj-llm checks that the answer is valid JSON, but it does not validate the decoded value against the schema or your application rules.
+
+;; Invalid JSON is returned as `:llm/structured-error` instead of throwing, and the original text is preserved. Check `:llm/finish-reason` as well: a response stopped by a token limit can still contain valid JSON. JSON `null` is represented by a present `:llm/structured` key with a nil value, so use `contains?` if you need to distinguish it from a missing structured response.
 
 ;; ## Embeddings
 
@@ -84,7 +107,7 @@
 
 ;; ## When things go wrong
 
-;; Malformed inputs fail fast at the boundary. Every public contract has a [malli](https://github.com/metosin/malli) schema (see the `clj-llm.spec` namespace), and violations throw `ex-info` with a humanized `:explain`:
+;; Invalid config, requests, and eval suites throw `ex-info` with a readable `:explain` value. Their [malli](https://github.com/metosin/malli) schemas are in `clj-llm.spec`:
 
 (try
   (llm/generate config {:llm/messages "not a vector of messages"})
@@ -92,4 +115,4 @@
     {:type (:type (ex-data e))
      :explain (:explain (ex-data e))}))
 
-;; HTTP failures from providers throw `ex-info` with `{:type :llm/http-error :status ... :body ...}`, where `:body` is the parsed error body, so a 401's message is right there in the ex-data. The full list of stable error types is in the design chapter.
+;; Provider HTTP errors use `{:type :llm/http-error :status ... :body ...}`. Network failures use `:llm/network-error`. Requesting structured output from an adapter or endpoint that does not support it uses `:llm/unsupported-capability`. The [design and compatibility](notebooks/design.md) chapter lists the other error types.

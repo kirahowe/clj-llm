@@ -1,11 +1,13 @@
 ;; # Conversations and streaming
 
+^{:kindly/hide-code true}
 (ns conversations-and-streaming
   (:require [clj-llm.core :as llm]
             [book.demo :as demo]
             [clojure.string :as str]
             [scicloj.kindly.v4.kind :as kind]))
 
+^{:kindly/hide-code true}
 (def config demo/config)
 
 ;; ## Multi-turn is just data
@@ -31,9 +33,9 @@
 
 (mapv :role (:llm/messages r2))
 
-;; Store that vector wherever your context keeps state: a Ring session, an atom, a database row. The library doesn't care, and because message maps are part of the frozen contract (`clj-llm.spec/Message`), conversations you persist today stay readable by every future version of the library. This also means a "conversation store" is any collection of message vectors; there is nothing to integrate with.
+;; Store the vector where your application keeps state: a Ring session, an atom, or a database row. Its schema is `clj-llm.spec/Message`.
 
-;; A zero-shot call and a conversation are the same operation; the verb is `generate`, not `chat`, because a one-off completion shouldn't have to pretend to be a dialogue.
+;; A single prompt and a multi-turn conversation both use `generate`; only the request data changes.
 
 ;; ## Streaming
 
@@ -53,7 +55,7 @@
 
 (= (str/join @chunks) (:llm/text streamed))
 
-;; That `(when (= :text type) ...)` guard is the forward-compatibility contract. Future versions may stream other chunk types (tool-call deltas, thinking, round boundaries in the tool loop), and they will arrive as new `:type` values. A callback that ignores types it doesn't recognize keeps working forever; a callback that assumes every chunk has text does not. Write the guard.
+;; Keep the `(when (= :text type) ...)` check. Future versions may add other chunk types, and callbacks should ignore types they do not handle.
 
 ;; In a terminal you'd print instead of collecting:
 
@@ -63,4 +65,4 @@
                                     (when (= :text type)
                                       (print text) (flush)))})")
 
-;; Streaming works the same across all three built-in adapters: Anthropic and OpenAI-compatible servers stream server-sent events, Ollama streams newline-delimited JSON, and the adapters normalize both into the same chunk maps, so your callback never knows the difference.
+;; The three built-in adapters return the same chunk shape. Anthropic and OpenAI-compatible servers use server-sent events, while Ollama uses newline-delimited JSON; the adapter handles that difference.

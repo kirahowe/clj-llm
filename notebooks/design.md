@@ -1,63 +1,101 @@
 # Design and compatibility
 
-clj-llm intends to commit to backwards compatibility permanently: code written against version 0.1 should run, unchanged, against every future version, and data stored by 0.1 (conversations, interaction records, eval reports) should stay readable forever. That is only possible if the contracts are explicit about where they can grow. This chapter is those contracts.
+This chapter documents the compatibility rules clj-llm intends to guarantee from `0.1.0` onward. During the alpha, these rules may still change when testing finds a problem.
 
-## The keyspace rule
+## Which keys belong to clj-llm
 
-Every map in the API belongs to one of two zones.
+Config, request, response, eval case, variant, suite, and report maps use namespaced `:llm/...` keys for library data. Other keys in those maps belong to your application. For example, an eval case may include `:support/article-id`, and a provider config may include adapter-specific keys such as `:api-key` or `:base-url`.
 
-**Boundary maps** are the maps you author, store, or extend: config, requests, responses/records, eval cases, variants, suites, reports. In these maps, every key the library defines is namespaced `:llm/...`, and everything else (unqualified keys, or keys in your own namespaces) is yours. The library will never assign meaning to a non-`:llm/` key in a boundary map. This is what lets a case carry your custom fields for your custom scorers, a response be decorated with your bookkeeping before storage, and a provider map hold adapter-specific settings, with no risk that a future release collides with them.
+The Integrant key is `:clj-llm/config` because it lives in a system map shared with other libraries.
 
-Why `llm` rather than something globally unique: the prefix only ever has to distinguish library keys from *your* keys inside maps this library defines, so the shortest unambiguous marker wins — and `llm` also names the library, which pays off in the two places these keys are read without the surrounding code: it lines up with the conventional alias (`llm/generate` returns `:llm/text`), and a stored interaction record still says what it is when it turns up in a database next to other systems' data. To be clear, the prefix echoes the library's name, not a claim about the models: small language models and embedding models travel under the same keys. The one deliberate exception is the Integrant key `:clj-llm/config`, because an Integrant system map is shared territory where many libraries' keys live side by side, so that one key spells the name out in full.
+Nested protocol data uses shorter, unqualified keys:
 
-**Protocol structures** are the shapes the library defines end-to-end and that benefit from staying industry-familiar: messages (`:role`, `:content`, `:tool-calls`, `:tool-call-id`, `:name`), tool definitions (`:name`, `:description`, `:parameters`, `:fn`), tool calls (`:id`, `:name`, `:arguments`), usage (`:input-tokens`, `:output-tokens`, ...), stream chunks (`:type`, `:text`), and scorer results (`:score`, `:reasoning`, `:error`). These keep plain keys, and the *plain* keyspace inside them is reserved: if you extend a message or a scorer result, use your own namespaced keys.
+- messages use `:role`, `:content`, `:tool-calls`, `:tool-call-id`, and `:name`;
+- tool definitions use `:name`, `:description`, `:parameters`, and `:fn`;
+- tool calls use `:id`, `:name`, and `:arguments`;
+- usage uses keys such as `:input-tokens` and `:output-tokens`;
+- stream chunks use `:type` and `:text`;
+- scorer results use `:score`, `:reasoning`, and `:error`.
 
-The corollary, and it's a commitment too: **don't invent keys in the `:llm/` namespace.** Validation may tighten around unknown `:llm/` keys in any release; that reserved space is what makes every other promise keepable.
+Those unqualified keys are reserved inside these nested structures. Add your own data with namespaced keys. Do not add application keys in the `:llm` namespace.
 
-## Schemas are the contract
+## Schemas and validation
 
-Every structure above has a [malli](https://github.com/metosin/malli) schema in `clj-llm.spec`, the machine-checkable version of this chapter. Requests, configs and suites are validated at the API boundary, and violations throw `ex-info` with a humanized `:explain`. All map schemas are open: extra keys always validate, in keeping with the keyspace rule.
+`clj-llm.spec` contains [malli](https://github.com/metosin/malli) schemas for the public data shapes. Configs, generation requests, embedding requests, and eval suites are validated when they enter the public API. Invalid values throw `ex-info` with a readable `:explain` value.
 
-## Stored data stays readable
+The map schemas are open, so application keys are accepted. Responses have a schema for documentation and tooling, but clj-llm constructs them rather than validating them at runtime.
 
-Messages are the contract with the longest lifetime, because users are told to persist them (in sessions, databases, logs) and to feed collected interaction records back in as eval cases. So the message spec is frozen with its growth path already reserved: `:content` is a string today, and a vector of typed content-part maps (each with a `:type`) is reserved for multimodal content. When images or audio arrive, they arrive as new part types inside that vector. Old stored conversations remain valid, and code that reads `:llm/text` on responses (rather than digging into message internals) keeps working without edits.
+## Stored conversations and requests
 
-## Streaming grows by chunk type
+A message's `:content` is a string today. The schema also reserves a vector of maps with a `:type` key for future content such as images or audio. Current adapters do not promise support for those content parts yet.
 
-`:llm/on-chunk` payloads always carry `:type`. Today the only type is `:text`, shaped `{:type :text :text "delta"}`. Future capabilities (tool-call deltas, thinking/reasoning streams, round boundaries in the tool loop) will arrive as new `:type` values, never by changing the shape of an existing one. The contract on your side: ignore chunks whose type you don't recognize. A callback written that way today never breaks.
+Use `:llm/text` when you only need the generated text. This avoids depending on provider-specific response data or future message content types.
 
-## The adapter contract is frozen
+Response records omit `:llm/on-chunk`, `:llm/on-interaction`, and tool `:fn` values from the stored `:llm/request`. Reattach tool functions before replaying a tool-using request.
 
-Third-party adapters are a compatibility surface in both directions, so `clj-llm.provider` splits into an SPI and an API, in the style of Integrant's `init-key`/`init`: the `-`-prefixed multimethods (`-generate!`, `-embed!`, `-start`, `-stop`) are what adapters *implement*, and the unprefixed functions (`generate!`, `embed!`, `start`, `stop`) are what callers *call*, where the trailing `opts` map is optional. The library commits to:
+## Streaming
 
-- New request keys are additive; adapters may ignore what they don't understand.
-- New result keys are always optional; `:message`, `:usage`, `:finish-reason` and `:raw` remain sufficient.
-- SPI signatures are frozen: `(-generate! provider-config request opts)`, `(-embed! provider-config request opts)`, `(-start provider-config opts)`, `(-stop provider-config opts)`. Each has exactly one arity, so an adapter implements exactly one thing and there is no forgettable delegating boilerplate. The `opts` map is reserved harness context (empty today: cancellation, deadlines and telemetry are the kinds of things that will travel there). Nothing will ever arrive as a new positional argument, because multimethod arity changes are the one thing existing adapters could never survive. The unprefixed API functions belong to the library and may grow conveniences freely. They are also the permanent seam for future validation or instrumentation around adapter calls.
-- Any future SPI multimethod ships with a `:default` implementation, so existing adapters keep loading without edits.
-- In provider config maps, only `:llm/`-qualified keys are the library's; the unqualified keyspace belongs to the adapter named by `:llm/adapter`. The library injects exactly one at resolution time: `:llm/name`, the name the provider was registered under in `:llm/providers` — useful in adapter error messages.
+Every `:llm/on-chunk` value has a `:type`. Text chunks currently look like `{:type :text :text "delta"}`. Callbacks should ignore chunk types they do not handle, because later releases may add types for tool calls or other streamed data.
 
-(Why multimethods and not a protocol: protocols dispatch on the *type* of the first argument, and provider configs are plain maps on purpose. A protocol would force adapters to become instantiated objects behind a constructor registry, giving up config-as-data. Multimethods dispatch on a value in the data, which is the shape of this problem; the ergonomic arity story lives in the wrapper functions instead.)
+## Provider adapter API
 
-## Errors are part of the API
+Adapters implement the `-`-prefixed multimethods in `clj-llm.provider`. Application and library code call their unprefixed wrappers:
 
-Thrown `ex-info`s carry a `:type` in their ex-data, and these keywords are stable, flat (decoupled from internal namespace layout), and never change meaning:
+| Adapter implements | Caller uses |
+|---|---|
+| `-generate!` | `generate!` |
+| `-embed!` | `embed!` |
+| `-supports?` | `supports?` |
+| `-start` | `start` |
+| `-stop` | `stop` |
 
-`:llm/http-error` (with `:status`, `:url`, `:body`), `:llm/network-error` (connect failures, timeouts, dropped streams — with `:url`, wrapping the underlying `IOException`), `:llm/invalid-request`, `:llm/invalid-config`, `:llm/invalid-suite`, `:llm/config-error`, `:llm/config-not-found`, `:llm/unknown-adapter`, `:llm/unknown-scorer`, `:llm/invalid-case`, `:llm/missing-api-key`, `:llm/unsupported`, `:llm/stream-error`.
+The adapter signatures are fixed:
 
-The line between the two HTTP-ish types: `:llm/http-error` means the provider answered and said no (it carries the status and parsed body); `:llm/network-error` means you never got an answer.
+```clojure
+(-generate! provider-config request opts)
+(-embed! provider-config request opts)
+(-supports? provider-config capability opts)
+(-start provider-config opts)
+(-stop provider-config opts)
+```
 
-`:llm/finish-reason` values are an open set: the common ones are normalized (`:stop`, `:length`, `:tool-calls`, `:refusal`), and unrecognized provider reasons pass through as keywords rather than being erased.
+New request keys may be ignored by adapters. New result keys are optional. New context will be added inside `request` or `opts`, not as another positional argument. Any new adapter multimethod will have a default implementation so existing adapters continue to load.
 
-## Architectural decisions, briefly
+Unqualified provider config keys belong to the adapter. clj-llm adds `:llm/name` when it resolves a configured provider so errors can identify that provider.
 
-**Providers are accounts; adapters are protocols.** Two config entries can share an adapter (OpenAI and Groq both speak chat-completions), which is how three adapters cover effectively the whole ecosystem. Adding a provider is config; adding a protocol is a page of multimethods.
+Multimethods are used because provider configs remain maps and dispatch on the value of `:llm/adapter`. A Clojure protocol would dispatch on the map's type instead.
 
-**Stateless by construction.** No client objects or connection state means the "integration story" for any framework is: pass the config map. The optional integrant bindings exist for lifecycle symmetry (and the `start`/`stop` hooks for hypothetical stateful adapters), not because the library needs them.
+## Errors
 
-**The verb is `generate`, not `chat`.** A zero-shot completion isn't a conversation; a conversation is `generate` over accumulated messages. One verb, one mental model, and the eval system gets to treat every interaction uniformly.
+Errors thrown by clj-llm use `ex-info` with a `:type` in `ex-data`:
 
-**`java.net.http`, cheshire, aero, malli, and nothing else.** For a library, transitive dependencies are a tax on every consumer. The JDK's HTTP client does everything needed (including streaming); cheshire is babashka's native JSON codec (a thin Jackson wrapper on the JVM, zero-cost under bb); aero is tiny; malli is the one deliberate splurge because schemas *are* the compatibility strategy.
+- `:llm/http-error` means the provider returned an unsuccessful HTTP response. Its data includes `:status`, `:url`, and parsed `:body`.
+- `:llm/network-error` means no complete response arrived because of a connection error, timeout, or dropped stream. Its data includes `:url` and wraps the underlying `IOException`.
+- Input and config errors use `:llm/invalid-request`, `:llm/invalid-config`, `:llm/invalid-suite`, `:llm/config-error`, `:llm/config-not-found`, or `:llm/invalid-case`.
+- Lookup and feature errors use `:llm/unknown-adapter`, `:llm/unknown-scorer`, `:llm/missing-api-key`, `:llm/unsupported`, or `:llm/unsupported-capability`.
+- A provider stream event may use `:llm/stream-error`.
 
-**Evals live in the core, with an extraction seam.** Keeping `clj-llm.eval` in the main artifact is a statement: measurement is not an optional extra. The `:llm/task` indirection doubles as the seam, because the eval harness runs arbitrary task functions and only *defaults* to `clj-llm.core/generate`. If the harness ever deserves a standalone life, it can move without breaking a caller.
+An unsupported structured response fails before the adapter makes an HTTP call. Its data includes `:provider`, `:adapter`, `:model`, and `:capability`, and no interaction record is created.
 
-**Wire compatibility tracks the present, with escape hatches.** The OpenAI adapter sends `max_completion_tokens` (the current field); `:legacy-max-tokens? true` on a provider covers older compatible servers. Anything the normalized request doesn't model can be forced onto the wire via `:llm/options`, which merges into the request body last — and a nil value in `:llm/options` *removes* a key, so a default the adapter injects (say, `stream_options` on a server that predates it) can be stripped without a new adapter flag.
+Malformed JSON from a completed structured request is different: the provider call happened, so the response is returned with `:llm/structured-error` and the original `:llm/text`. It does not throw.
+
+Finish reasons are an open set. Common provider values are normalized to `:stop`, `:length`, `:tool-calls`, and `:refusal`; unknown values remain keywords.
+
+## Structured responses
+
+The portable request shape is `:llm/response-format {:type :json-schema :name ... :schema ...}`. Built-in adapters translate the wrapper but pass the schema itself through unchanged. Each provider and model may support a different JSON Schema subset; a provider rejection is returned as `:llm/http-error`.
+
+For a final answer, clj-llm parses the complete text and keywordizes JSON object keys. The response contains either `:llm/structured` or `:llm/structured-error`. A successful JSON `null` is represented by a present `:llm/structured` key with a nil value. clj-llm does not validate the decoded value against the requested schema.
+
+Pending tool calls have neither structured key. An automatic tool loop sends the response format on every round and parses only the final answer.
+
+The built-in adapters report support for `:json-schema-response`; custom adapters default to false. A provider may override this with `:llm/capabilities {:json-schema-response true}` or `false`. `:llm/options` is still applied last to the provider request, even if it replaces or removes the adapter's structured-output field.
+
+## Other design choices
+
+- Providers represent configured accounts or endpoints. Adapters implement protocols such as Anthropic Messages, OpenAI Chat Completions, or Ollama's native API. Several providers may use the same adapter.
+- `generate` is synchronous and stateless. A conversation is a messages vector supplied with the request.
+- The direct runtime dependencies are aero, cheshire, and malli. HTTP uses the JDK's `java.net.http` client.
+- Evals ship in the main library. A custom `:llm/task` can evaluate an application function that makes one or more model calls.
+- The OpenAI adapter sends `max_completion_tokens`. Set `:legacy-max-tokens? true` on a provider that requires the older `max_tokens` field.
+- `:llm/options` is applied to the provider request last. A nil option removes that field.
