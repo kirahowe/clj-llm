@@ -9,12 +9,14 @@
   The namespace is split into an SPI and an API, in the style of
   integrant's init-key/init:
 
-  - The `-`-prefixed multimethods (`-generate!`, `-embed!`, `-start`,
-    `-stop`) are the SPI: adapters implement them, nobody calls them
+  - The `-`-prefixed multimethods (`-generate!`, `-embed!`, `-supports?`,
+    `-start`, `-stop`) are the SPI: adapters implement them, nobody calls them
     directly. Each has exactly one fixed signature, with a trailing
     `opts` map of harness-level context — empty today, reserved for
-    cross-cutting concerns like cancellation or telemetry. Implement the
-    full signature; ignore `opts` until it means something.
+    cross-cutting concerns like cancellation or telemetry. Capability
+    checks currently receive the normalized request there. Implement the
+    full signature; generation, embedding and lifecycle adapters may
+    otherwise ignore `opts` until it means something.
 
   - The unprefixed functions (`generate!`, `embed!`, `start`, `stop`)
     are the API: callers use them, and `opts` is genuinely optional.
@@ -32,6 +34,8 @@
           :temperature 0.7                   optional
           :tools       [{:name \"...\" :description \"...\"
                          :parameters {...json schema...} :fn (fn [args] ...)}]
+          :response-format {:type :json-schema :name \"name\"
+                            :schema {...}} optional portable structured output
           :on-chunk    (fn [{:keys [type text]}])  optional streaming callback;
                                              chunks have :type (:text today)
           :options     {...}}                provider-specific passthrough,
@@ -47,6 +51,13 @@
   today; a vector of content-part maps is reserved for future multimodal
   content — adapters should tolerate (or reject clearly) what they don't
   support.
+
+  Adapters that implement JSON Schema responses also implement
+  (-supports? provider-config :json-schema-response opts), returning
+  true. The opts map contains {:request normalized-request}, allowing
+  model-aware capability decisions. The default is false. An explicit
+  boolean under provider-config :llm/capabilities overrides this SPI
+  answer for endpoint-specific reality.
 
   Adapters return a plain-keyed result map:
 
@@ -69,6 +80,7 @@
 
   - The SPI signatures are frozen: (-generate! provider-config request
     opts), (-embed! provider-config request opts),
+    (-supports? provider-config capability opts),
     (-start provider-config opts), (-stop provider-config opts).
     Anything new travels inside `request` or `opts`, never as a new
     positional argument. (The unprefixed API functions may grow
@@ -118,8 +130,16 @@
   `stop` instead."
   dispatch)
 
+(defmulti -supports?
+  "SPI: report whether a provider adapter supports `capability` for the
+  supplied harness context. Implement as (-supports? provider-config
+  capability opts). The default is false, so adding capabilities never
+  breaks existing adapters. Callers should use `supports?` instead."
+  dispatch)
+
 (defmethod -start :default [provider-config _opts] provider-config)
 (defmethod -stop :default [_provider-config _opts] nil)
+(defmethod -supports? :default [_provider-config _capability _opts] false)
 
 (defn- unknown-adapter! [provider-config op]
   (throw (ex-info (str "No " op " implementation for adapter "
@@ -139,13 +159,35 @@
 ;; ---------------------------------------------------------------------------
 ;; API — callers use these; opts is optional
 
+(defn supports?
+  "Return whether a configured provider supports `capability`.
+  Explicit booleans under :llm/capabilities override the adapter SPI;
+  otherwise dispatch to `-supports?`. `opts` defaults to {}."
+  ([provider-config capability]
+   (supports? provider-config capability {}))
+  ([provider-config capability opts]
+   (let [overrides (:llm/capabilities provider-config)]
+     (if (contains? overrides capability)
+       (get overrides capability)
+       (boolean (-supports? provider-config capability opts))))))
+
 (defn generate!
   "Execute one text-generation request against a provider. Dispatches
   to the adapter's `-generate!` implementation; `opts` defaults to {}.
   Most callers want clj-llm.core/generate, which resolves config,
   applies defaults and runs the tool loop."
-  ([provider-config request] (-generate! provider-config request {}))
-  ([provider-config request opts] (-generate! provider-config request opts)))
+  ([provider-config request] (generate! provider-config request {}))
+  ([provider-config request opts]
+   (when (:llm/response-format request)
+     (when-not (supports? provider-config :json-schema-response
+                          {:request request})
+       (throw (ex-info "Provider does not support JSON Schema responses"
+                       {:type :llm/unsupported-capability
+                        :provider (:llm/name provider-config)
+                        :adapter (:llm/adapter provider-config)
+                        :model (:llm/model request)
+                        :capability :json-schema-response}))))
+   (-generate! provider-config request opts)))
 
 (defn embed!
   "Compute embeddings via the adapter's `-embed!` implementation;

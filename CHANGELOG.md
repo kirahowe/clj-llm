@@ -3,12 +3,29 @@ All notable changes to this project will be documented in this file. This change
 
 ## [Unreleased]
 
-Everything here comes from migrating the library's first real consumer —
-a custom `:llm/task` suite wrapping a two-call pipeline with structured
-results — onto the eval layer. Each entry closes a place where that
-layer still assumed a case is exactly one chat request.
+This release adds portable structured generation and closes the gaps
+found while migrating the library's first custom `:llm/task` consumer
+onto the eval layer.
 
 ### Added
+- **Portable structured responses for `generate`.** Requests accept
+  `:llm/response-format {:type :json-schema :name ... :schema ...}`;
+  Anthropic, OpenAI-compatible, and Ollama adapters map it to their
+  native wire formats without transforming the schema. Terminal text is
+  preserved and decoded into `:llm/structured` (recursively keywordized,
+  including a present nil for JSON `null`), while malformed output is
+  retained as `:llm/structured-error` response data. Decoding is
+  independent of finish reason and occurs only once a tool loop has a
+  final answer.
+- **Provider capability SPI.** `-supports?` / `supports?` adds
+  model/request-aware feature reporting with a compatibility-safe false
+  default. Provider `:llm/capabilities` booleans override the adapter,
+  and unsupported structured requests fail before HTTP with exact
+  `:llm/unsupported-capability` provenance.
+- **OpenAI refusal normalization.** Streaming and non-streaming refusal
+  text now becomes normalized assistant text with finish reason
+  `:refusal`; streaming refusal deltas are emitted as ordinary text
+  chunks and retained in the synthesized raw response.
 - **Eval runs observe every LLM call a task makes.** The runner hands
   each task a config whose `:llm/on-interaction` collects interaction
   records (chaining any hook the config already had). Each result

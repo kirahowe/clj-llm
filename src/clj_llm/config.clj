@@ -15,10 +15,11 @@
 
   Providers are *accounts/endpoints* (an Anthropic account, a Groq
   account, a local Ollama server). The :llm/adapter key selects the
-  wire protocol — see clj-llm.provider; every other key in a provider map
-  belongs to that adapter (:api-key, :base-url, ...) and flows through
-  untouched. Models are aliases so application code can say :fast or
-  :smart and the vendor mapping lives in config. :llm/defaults are
+  wire protocol — see clj-llm.provider; :llm/capabilities optionally
+  overrides adapter feature reports for that endpoint. Unqualified keys
+  in a provider map belong to that adapter (:api-key, :base-url, ...) and
+  flow through untouched. Models are aliases so application code can say
+  :fast or :smart and the vendor mapping lives in config. :llm/defaults are
   merged into every request; that includes :llm/on-interaction, a hook
   that receives every response record (see clj-llm.core/generate) — the
   raw material for evals.

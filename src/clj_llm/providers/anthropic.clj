@@ -63,7 +63,7 @@
 (defn build-request
   "Build the wire-format request body (a map ready to be sent as JSON)."
   ([request] (build-request request {}))
-  ([{:llm/keys [model messages system max-tokens temperature tools options]}
+  ([{:llm/keys [model messages system max-tokens temperature tools response-format options]}
     {:keys [stream?]}]
    (let [system (or system
                     (some #(when (= :system (:role %)) (:content %)) messages))]
@@ -73,6 +73,10 @@
        system (assoc :system system)
        temperature (assoc :temperature temperature)
        (seq tools) (assoc :tools (mapv tool->wire tools))
+       response-format
+       (assoc :output_config
+              {:format {:type "json_schema"
+                        :schema (:schema response-format)}})
        stream? (assoc :stream true)
        :always (provider/merge-options options)))))
 
@@ -218,3 +222,7 @@
                        "or :ollama provider for embeddings.")
                   {:type :llm/unsupported
                    :provider (:llm/name provider-config)})))
+
+(defmethod provider/-supports? :anthropic
+  [_provider-config capability _opts]
+  (= :json-schema-response capability))

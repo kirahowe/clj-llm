@@ -65,7 +65,10 @@
                                :usage {:prompt_tokens 8 :completion_tokens 2}}])
                         ["data: [DONE]" ""]))
         (respond-json exchange
-                      {:choices [{:message {:role "assistant" :content "plain"}
+                      {:choices [{:message {:role "assistant"
+                                            :content (if (:response_format (:body request))
+                                                       "{\"answer\":{\"value\":42}}"
+                                                       "plain")}
                                   :finish_reason "stop"}]
                        :model "test-model"
                        :usage {:prompt_tokens 8 :completion_tokens 1}}))
@@ -143,6 +146,32 @@
     (testing "bearer auth header"
       (is (= ["Bearer compat-key"]
              (get-in (first @requests) [:headers "authorization"]))))))
+
+(deftest structured-response-round-trip
+  (let [schema {:type "object"
+                :properties {:answer {:type "object"
+                                      :properties {:value {:type "integer"}}}}
+                :required ["answer"]}
+        format {:type :json-schema :name "answer" :schema schema}
+        response (llm/generate (config) "hello"
+                               {:llm/model "compat/test-model"
+                                :llm/response-format format})]
+    (is (= {:answer {:value 42}} (:llm/structured response)))
+    (is (= "{\"answer\":{\"value\":42}}" (:llm/text response)))
+    (is (= format (get-in response [:llm/request :llm/response-format])))
+    (is (= {:choices [{:message
+                       {:role "assistant"
+                        :content "{\"answer\":{\"value\":42}}"}
+                       :finish_reason "stop"}]
+            :model "test-model"
+            :usage {:prompt_tokens 8 :completion_tokens 1}}
+           (:llm/raw response)))
+    (is (= {:model "test-model"
+            :messages [{:role "user" :content "hello"}]
+            :response_format
+            {:type "json_schema"
+             :json_schema {:name "answer" :schema schema :strict true}}}
+           (:body (first @requests))))))
 
 (deftest openai-streaming-round-trip
   (let [chunks (atom [])

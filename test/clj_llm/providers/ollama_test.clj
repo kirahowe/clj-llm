@@ -31,6 +31,34 @@
     (is (not (contains? body :options))
         "nil in :llm/options removes the sampling :options key")))
 
+(deftest build-request-structured-response
+  (let [schema {:type "object" :properties {:answer {:type "string"}}}
+        request {:llm/model "m"
+                 :llm/messages [{:role :user :content "hi"}]
+                 :llm/tools [{:name "lookup" :parameters {:type "object"}}]
+                 :llm/response-format {:type :json-schema
+                                       :name "unused-on-wire"
+                                       :schema schema}}
+        expected {:model "m"
+                  :messages [{:role "user" :content "hi"}]
+                  :stream false
+                  :tools [{:type "function"
+                           :function {:name "lookup"
+                                      :description nil
+                                      :parameters {:type "object"}}}]
+                  :format schema}]
+    (is (= expected (ollama/build-request request)))
+    (is (= (assoc expected :stream true)
+           (ollama/build-request request {:stream? true})))
+    (is (= {:custom true}
+           (:format
+            (ollama/build-request
+             (assoc request :llm/options {:format {:custom true}})))))
+    (is (not (contains?
+              (ollama/build-request
+               (assoc request :llm/options {:format nil}))
+              :format)))))
+
 (deftest build-request-system-and-tools
   (let [body (ollama/build-request
               {:llm/model "m" :llm/system "be brief"

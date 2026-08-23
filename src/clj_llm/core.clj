@@ -47,13 +47,15 @@
   chunks are plain-keyed protocol structures whose plain keyspace is
   reserved — see clj-llm.spec for the full schemas."
   (:require [cheshire.core :as json]
+            [clojure.string :as str]
             [clj-llm.config :as config]
             [clj-llm.provider :as provider]
             [clj-llm.spec :as spec]
             ;; Loading the bundled adapters registers their multimethods.
             [clj-llm.providers.anthropic]
             [clj-llm.providers.ollama]
-            [clj-llm.providers.openai]))
+            [clj-llm.providers.openai])
+  (:import (java.io BufferedReader StringReader)))
 
 (def default-max-tool-rounds 10)
 
@@ -148,6 +150,24 @@
       (try (on-interaction response) (catch Exception _ nil)))
     response))
 
+(defn- parse-structured-response [response request]
+  (if (and (:llm/response-format request)
+           (not (seq (:llm/tool-calls response))))
+    (try
+      (let [text (:llm/text response)]
+        (when (str/blank? text)
+          (throw (ex-info "Structured response text is blank" {})))
+        (with-open [reader (BufferedReader. (StringReader. text))]
+          (let [values (doall (json/parsed-seq reader true))]
+            (when-not (= 1 (count values))
+              (throw (ex-info "Structured response has multiple JSON values" {})))
+            (assoc response :llm/structured (first values)))))
+      (catch Exception e
+        (assoc response :llm/structured-error
+               {:type :llm/invalid-structured-response
+                :message (or (ex-message e) (str e))})))
+    response))
+
 (defn generate
   "Generate a response from an LLM. Stateless: takes the config and a
   prompt string or request map, returns a response map.
@@ -177,6 +197,10 @@
                      response record; usually set once under
                      :llm/defaults in config to collect interactions
                      for evals
+    :llm/response-format  {:type :json-schema :name \"name\" :schema {...}}
+                     requests a portable JSON Schema response; terminal
+                     text is decoded under :llm/structured, or a decoding
+                     error is returned under :llm/structured-error
     :llm/options     provider-specific map merged into the wire request
 
   Unqualified keys and your own namespaced keys are never interpreted by
@@ -195,6 +219,9 @@
           :provider      provider name keyword
           :usage         {:input-tokens n :output-tokens n} summed over rounds
           :finish-reason :stop | :length | :tool-calls | :refusal | ...
+          :structured    decoded JSON for a structured terminal answer
+          :structured-error decoding failure data, mutually exclusive
+                         with :structured
           :request       the fully resolved request (replayable; tool
                          :fns removed) — with :llm/latency-ms,
                          :llm/started-at and :llm/op this makes
@@ -241,7 +268,8 @@
                                     :finish-reason (:finish-reason response)
                                     :raw (:raw response)}
                         (seq tool-calls) (assoc :llm/tool-calls tool-calls)))))]
-     (finish-record result :generate request started-at start-nanos))))
+     (finish-record (parse-structured-response result request)
+                    :generate request started-at start-nanos))))
 
 (defn embed
   "Compute embeddings for a string or a sequence of strings. The model

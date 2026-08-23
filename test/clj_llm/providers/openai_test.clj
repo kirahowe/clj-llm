@@ -63,6 +63,37 @@
     (is (not (contains? body :stream_options))
         "nil in :llm/options removes a key the adapter set")))
 
+(deftest build-request-structured-response
+  (let [schema {:type "object" :properties {:answer {:type "string"}}}
+        request {:llm/model "m"
+                 :llm/messages [{:role :user :content "hi"}]
+                 :llm/tools [{:name "lookup" :parameters {:type "object"}}]
+                 :llm/response-format {:type :json-schema
+                                       :name "answer"
+                                       :schema schema}}
+        wire-format {:type "json_schema"
+                     :json_schema {:name "answer" :schema schema :strict true}}
+        expected {:model "m"
+                  :messages [{:role "user" :content "hi"}]
+                  :tools [{:type "function"
+                           :function {:name "lookup"
+                                      :description nil
+                                      :parameters {:type "object"}}}]
+                  :response_format wire-format}]
+    (is (= expected (openai/build-request request)))
+    (is (= (assoc expected
+                  :stream true
+                  :stream_options {:include_usage true})
+           (openai/build-request request {:stream? true})))
+    (is (= {:custom true}
+           (:response_format
+            (openai/build-request
+             (assoc request :llm/options {:response_format {:custom true}})))))
+    (is (not (contains?
+              (openai/build-request
+               (assoc request :llm/options {:response_format nil}))
+              :response_format)))))
+
 (deftest tool-conversation-wire-format
   (let [body (openai/build-request
               {:llm/model "m"
@@ -106,6 +137,37 @@
     (is (= [{:id "call_1" :name "get-weather" :arguments {:city "Berlin"}}]
            (get-in parsed [:message :tool-calls])))
     (is (= "" (get-in parsed [:message :content])) "nil content normalizes to \"\"")))
+
+(deftest parse-response-refusal
+  (let [body {:choices [{:message {:content "ignored"
+                                   :refusal "I cannot help with that."}
+                         :finish_reason "stop"}]
+              :model "gpt"
+              :usage {}}
+        parsed (openai/parse-response body)]
+    (is (= "I cannot help with that." (get-in parsed [:message :content])))
+    (is (= :refusal (:finish-reason parsed)))
+    (is (= body (:raw parsed)))))
+
+(deftest streaming-refusal-accumulation
+  (let [chunks-in [{:choices [{:delta {:refusal "I cannot"}}]
+                    :model "gpt"}
+                   {:choices [{:delta {:refusal " help."}}]}
+                   {:choices [{:delta {} :finish_reason "stop"}]}]
+        streamed (atom [])
+        parsed (-> (reduce #(openai/reduce-chunk %1 %2
+                                                 (fn [chunk]
+                                                   (swap! streamed conj chunk)))
+                           openai/initial-stream-state
+                           chunks-in)
+                   openai/finalize-stream)]
+    (is (= [{:type :text :text "I cannot"}
+            {:type :text :text " help."}]
+           @streamed))
+    (is (= "I cannot help." (get-in parsed [:message :content])))
+    (is (= :refusal (:finish-reason parsed)))
+    (is (= "I cannot help."
+           (get-in parsed [:raw :choices 0 :message :refusal])))))
 
 (deftest streaming-accumulation
   (let [chunks-in [{:choices [{:delta {:role "assistant" :content ""}}]

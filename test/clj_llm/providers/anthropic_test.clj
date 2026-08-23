@@ -61,6 +61,34 @@
     (is (not (contains? body :max_tokens))
         "nil in :llm/options removes a key the adapter always injects")))
 
+(deftest build-request-structured-response
+  (let [schema {:type "object" :properties {:answer {:type "string"}}}
+        request {:llm/model "m"
+                 :llm/messages [{:role :user :content "hi"}]
+                 :llm/tools [{:name "lookup" :parameters {:type "object"}}]
+                 :llm/response-format {:type :json-schema
+                                       :name "unused-on-wire"
+                                       :schema schema}}
+        expected {:model "m"
+                  :max_tokens anthropic/default-max-tokens
+                  :messages [{:role "user" :content "hi"}]
+                  :tools [{:name "lookup"
+                           :description nil
+                           :input_schema {:type "object"}}]
+                  :output_config {:format {:type "json_schema"
+                                           :schema schema}}}]
+    (is (= expected (anthropic/build-request request)))
+    (is (= (assoc expected :stream true)
+           (anthropic/build-request request {:stream? true})))
+    (is (= {:custom true}
+           (:output_config
+            (anthropic/build-request
+             (assoc request :llm/options {:output_config {:custom true}})))))
+    (is (not (contains?
+              (anthropic/build-request
+               (assoc request :llm/options {:output_config nil}))
+              :output_config)))))
+
 (deftest build-request-streaming
   (let [body (anthropic/build-request
               {:llm/model "m"

@@ -48,7 +48,7 @@
 (defn build-request
   "Build the wire-format request body (a map ready to be sent as JSON)."
   ([request] (build-request request {}))
-  ([{:llm/keys [model messages system max-tokens temperature tools options]}
+  ([{:llm/keys [model messages system max-tokens temperature tools response-format options]}
     {:keys [stream? legacy-max-tokens?]}]
    (let [messages (if system
                     (into [{:role :system :content system}]
@@ -60,6 +60,12 @@
                          max-tokens)
        temperature (assoc :temperature temperature)
        (seq tools) (assoc :tools (mapv tool->wire tools))
+       response-format
+       (assoc :response_format
+              {:type "json_schema"
+               :json_schema {:name (:name response-format)
+                             :schema (:schema response-format)
+                             :strict true}})
        stream? (assoc :stream true
                       :stream_options {:include_usage true})
        :always (provider/merge-options options)))))
@@ -86,25 +92,32 @@
   [body]
   (let [choice (first (:choices body))
         message (:message choice)
+        refusal (:refusal message)
         tool-calls (mapv (fn [tc]
                            {:id (:id tc)
                             :name (get-in tc [:function :name])
                             :arguments (parse-arguments
                                         (get-in tc [:function :arguments]))})
                          (:tool_calls message))]
-    {:message (cond-> {:role :assistant :content (or (:content message) "")}
+    {:message (cond-> {:role :assistant
+                       :content (if (some? refusal)
+                                  refusal
+                                  (or (:content message) ""))}
                 (seq tool-calls) (assoc :tool-calls tool-calls))
      :model (:model body)
      :usage {:input-tokens (get-in body [:usage :prompt_tokens])
              :output-tokens (get-in body [:usage :completion_tokens])}
-     :finish-reason (finish-reason (:finish_reason choice))
+     :finish-reason (if (some? refusal)
+                      :refusal
+                      (finish-reason (:finish_reason choice)))
      :raw body}))
 
 ;; ---------------------------------------------------------------------------
 ;; Streaming (server-sent events; terminated by "data: [DONE]")
 
 (def initial-stream-state
-  {:content "" :tool-calls (sorted-map) :model nil :finish-reason nil :usage nil})
+  {:content "" :refusal nil :tool-calls (sorted-map)
+   :model nil :finish-reason nil :usage nil})
 
 (defn reduce-chunk
   "Fold one parsed SSE chunk into the stream accumulator, invoking
@@ -120,6 +133,10 @@
       (if-let [text (:content delta)]
         (do (when on-chunk (on-chunk {:type :text :text text}))
             (update state :content str text))
+        state)
+      (if-let [refusal (:refusal delta)]
+        (do (when on-chunk (on-chunk {:type :text :text refusal}))
+            (update state :refusal (fnil str "") refusal))
         state)
       (reduce (fn [state tc]
                 (let [i (:index tc)]
@@ -138,14 +155,16 @@
 (defn finalize-stream
   "Assemble the accumulated stream state into the same normalized shape
   as parse-response."
-  [{:keys [content tool-calls model finish-reason usage]}]
+  [{:keys [content refusal tool-calls model finish-reason usage]}]
   (parse-response
-   {:choices [{:message {:content content
-                         :tool_calls (mapv (fn [[_ tc]]
-                                             {:id (:id tc)
-                                              :function {:name (:name tc)
-                                                         :arguments (:arguments tc)}})
-                                           tool-calls)}
+   {:choices [{:message (cond->
+                         {:content content
+                          :tool_calls (mapv (fn [[_ tc]]
+                                              {:id (:id tc)
+                                               :function {:name (:name tc)
+                                                          :arguments (:arguments tc)}})
+                                            tool-calls)}
+                          (some? refusal) (assoc :refusal refusal))
                :finish_reason finish-reason}]
     :model model
     :usage usage}))
@@ -192,3 +211,7 @@
      :model (:model body)
      :usage {:input-tokens (get-in body [:usage :prompt_tokens])}
      :raw body}))
+
+(defmethod provider/-supports? :openai
+  [_provider-config capability _opts]
+  (= :json-schema-response capability))

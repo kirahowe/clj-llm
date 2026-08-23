@@ -13,10 +13,11 @@
     (swap! responses subvec 1)
     (if (fn? response) (response request) response)))
 
-(defn scripted-config [responses & {:keys [requests defaults]}]
-  {:llm/providers {:fake {:llm/adapter ::scripted
-                          :responses (atom (vec responses))
-                          :requests requests}}
+(defn scripted-config [responses & {:keys [requests defaults capabilities]}]
+  {:llm/providers {:fake (cond-> {:llm/adapter ::scripted
+                                  :responses (atom (vec responses))
+                                  :requests requests}
+                           capabilities (assoc :llm/capabilities capabilities))}
    :llm/models {:default {:llm/provider :fake :llm/model "fake-1"}}
    :llm/defaults (merge {:llm/model :default} defaults)})
 
@@ -26,6 +27,11 @@
    :usage {:input-tokens 10 :output-tokens 5}
    :finish-reason :stop
    :raw {:fake true}})
+
+(def structured-format
+  {:type :json-schema
+   :name "answer"
+   :schema {:type "object" :properties {:answer {:type "string"}}}})
 
 (deftest zero-shot-generation
   (let [requests (atom [])
@@ -222,6 +228,134 @@
     (is (= ["Once" " upon" " a time"] (map :text @chunks)))
     (is (every? #(= :text (:type %)) @chunks))
     (is (= "Once upon a time" (:llm/text response)))))
+
+(deftest structured-responses
+  (testing "objects are recursively keywordized"
+    (let [records (atom [])
+          config (scripted-config
+                  [(text-response "{\"outer\":{\"inner\":1}}")]
+                  :capabilities {:json-schema-response true}
+                  :defaults {:llm/on-interaction #(swap! records conj %)})
+          response (llm/generate config "structured"
+                                 {:llm/response-format structured-format})]
+      (is (= {:outer {:inner 1}} (:llm/structured response)))
+      (is (= response (first @records))
+          "the hook sees structured data in the finished record")
+      (is (= structured-format
+             (get-in response [:llm/request :llm/response-format])))
+      (is (= "{\"outer\":{\"inner\":1}}" (:llm/text response)))
+      (is (= {:fake true} (:llm/raw response)))))
+
+  (testing "all JSON value types, including a present nil for null"
+    (doseq [[text expected] [["[1,{\"two\":2}]" [1 {:two 2}]]
+                             ["42" 42]
+                             ["true" true]
+                             ["null" nil]]]
+      (let [response (llm/generate
+                      (scripted-config [(text-response text)]
+                                       :capabilities {:json-schema-response true})
+                      "structured"
+                      {:llm/response-format structured-format})]
+        (is (contains? response :llm/structured) text)
+        (is (= expected (:llm/structured response)) text)
+        (is (not (contains? response :llm/structured-error)) text))))
+
+  (testing "decoding failures become response data without throwing"
+    (doseq [[text reason] [["not json" :stop]
+                           ["" :stop]
+                           ["{} trailing" :stop]
+                           ["{\"answer\":" :length]
+                           ["I cannot comply" :refusal]]]
+      (let [provider-response (assoc (text-response text) :finish-reason reason)
+            response (llm/generate
+                      (scripted-config [provider-response]
+                                       :capabilities {:json-schema-response true})
+                      "structured"
+                      {:llm/response-format structured-format})]
+        (is (= text (:llm/text response)))
+        (is (= reason (:llm/finish-reason response)))
+        (is (= :llm/invalid-structured-response
+               (get-in response [:llm/structured-error :type])))
+        (is (string? (get-in response [:llm/structured-error :message])))
+        (is (not (contains? response :llm/structured))))))
+
+  (testing "valid JSON is decoded independently of finish reason"
+    (doseq [reason [:length :refusal]]
+      (let [response (llm/generate
+                      (scripted-config
+                       [(assoc (text-response "{\"answer\":\"partial\"}")
+                               :finish-reason reason)]
+                       :capabilities {:json-schema-response true})
+                      "structured"
+                      {:llm/response-format structured-format})]
+        (is (= {:answer "partial"} (:llm/structured response)))
+        (is (= reason (:llm/finish-reason response))))))
+
+  (testing "streaming parses the final accumulated text"
+    (let [chunks (atom [])
+          config (scripted-config
+                  [(fn [{:llm/keys [on-chunk]}]
+                     (doseq [text ["{\"answer\":" "\"yes\"}"]]
+                       (on-chunk {:type :text :text text}))
+                     (text-response "{\"answer\":\"yes\"}"))]
+                  :capabilities {:json-schema-response true})
+          response (llm/generate config "structured"
+                                 {:llm/response-format structured-format
+                                  :llm/on-chunk #(swap! chunks conj %)})]
+      (is (= "{\"answer\":\"yes\"}" (apply str (map :text @chunks))))
+      (is (= {:answer "yes"} (:llm/structured response))))))
+
+(deftest structured-responses-with-tools
+  (testing "only the final automatic tool-loop answer is parsed"
+    (let [requests (atom [])
+          config (scripted-config
+                  [(tool-call-response [weather-tool-call])
+                   (text-response "{\"answer\":\"sunny\"}")]
+                  :requests requests
+                  :capabilities {:json-schema-response true})
+          response (llm/generate
+                    config "weather"
+                    {:llm/response-format structured-format
+                     :llm/tools [{:name "get-weather" :fn (constantly "sunny")}]})]
+      (is (= {:answer "sunny"} (:llm/structured response)))
+      (is (= [structured-format structured-format]
+             (map :llm/response-format @requests))
+          "the response format is sent on every provider round")))
+
+  (testing "pending manual tool calls have no structured result"
+    (let [response (llm/generate
+                    (scripted-config [(tool-call-response [weather-tool-call])]
+                                     :capabilities {:json-schema-response true})
+                    "weather"
+                    {:llm/response-format structured-format
+                     :llm/tools [{:name "get-weather"}]})]
+      (is (not (contains? response :llm/structured)))
+      (is (not (contains? response :llm/structured-error)))))
+
+  (testing "round-limited pending tool calls have no structured result"
+    (let [config (scripted-config
+                  (repeat 3 (tool-call-response [weather-tool-call]))
+                  :capabilities {:json-schema-response true})
+          response (llm/generate
+                    config "weather"
+                    {:llm/response-format structured-format
+                     :llm/max-tool-rounds 1
+                     :llm/tools [{:name "get-weather" :fn (constantly "sunny")}]})]
+      (is (seq (:llm/tool-calls response)))
+      (is (not (contains? response :llm/structured)))
+      (is (not (contains? response :llm/structured-error)))))
+
+  (testing ":llm/options does not disable central parsing"
+    (let [requests (atom [])
+          response (llm/generate
+                    (scripted-config [(text-response "{\"answer\":\"yes\"}")]
+                                     :requests requests
+                                     :capabilities {:json-schema-response true})
+                    "structured"
+                    {:llm/response-format structured-format
+                     :llm/options {:response_format nil}})]
+      (is (= {:response_format nil} (:llm/options (first @requests))))
+      (is (= {:answer "yes"} (:llm/structured response))))))
 
 (deftest embeddings
   (let [seen (atom nil)]

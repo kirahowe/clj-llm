@@ -7,7 +7,8 @@
 ;;
 ;; Keys the library defines are namespaced :llm/...; every other key is
 ;; yours. Inside a provider map, the unqualified keys (:api-key, :base-url,
-;; ...) belong to that provider's adapter.
+;; ...) belong to that provider's adapter. Optional :llm/capabilities
+;; booleans override the adapter's feature report for that endpoint.
 #:llm{:providers
       {;; Anthropic's first-party API
        :anthropic {:llm/adapter :anthropic

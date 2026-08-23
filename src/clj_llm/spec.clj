@@ -79,12 +79,19 @@
     [:map [:llm/provider :keyword] [:llm/model :string]]]))
 
 (def ProviderConfig
-  (m/schema [:map [:llm/adapter :keyword]]))
+  (m/schema
+   [:map
+    [:llm/adapter :keyword]
+    [:llm/capabilities {:optional true} [:map-of :keyword :boolean]]]))
 
 (def Config
   (m/schema
    [:map
-    [:llm/providers [:map-of :keyword [:map [:llm/adapter :keyword]]]]
+    [:llm/providers
+     [:map-of :keyword
+      [:map
+       [:llm/adapter :keyword]
+       [:llm/capabilities {:optional true} [:map-of :keyword :boolean]]]]]
     [:llm/models {:optional true}
      [:map-of :keyword [:or :keyword :string
                         [:map [:llm/provider :keyword] [:llm/model :string]]]]]
@@ -92,6 +99,19 @@
 
 ;; ---------------------------------------------------------------------------
 ;; Requests and responses
+
+(def ResponseFormat
+  (m/schema
+   [:map
+    [:type [:= :json-schema]]
+    [:name [:re #"^[A-Za-z0-9_-]{1,64}$"]]
+    [:schema :map]]))
+
+(def StructuredError
+  (m/schema
+   [:map
+    [:type [:= :llm/invalid-structured-response]]
+    [:message :string]]))
 
 (def Request
   "A generate request after normalization (prompt string / :llm/prompt
@@ -107,6 +127,7 @@
     [:llm/max-tool-rounds {:optional true} pos-int?]
     [:llm/on-chunk {:optional true} fn?]
     [:llm/on-interaction {:optional true} fn?]
+    [:llm/response-format {:optional true} ResponseFormat]
     [:llm/options {:optional true} :map]]))
 
 (def EmbedRequest
@@ -122,21 +143,28 @@
   interaction record. Documentation schema; responses are constructed by
   the library and not validated at runtime."
   (m/schema
-   [:map
-    [:llm/text {:optional true} [:maybe :string]]
-    [:llm/messages {:optional true} [:sequential Message]]
-    [:llm/tool-calls {:optional true} [:sequential ToolCall]]
-    [:llm/model {:optional true} [:maybe :string]]
-    [:llm/provider {:optional true} :keyword]
-    [:llm/usage {:optional true} [:maybe Usage]]
-    [:llm/finish-reason {:optional true} [:maybe :keyword]]
-    [:llm/request {:optional true} :map]
-    [:llm/latency-ms {:optional true} number?]
-    [:llm/started-at {:optional true} inst?]
-    [:llm/op {:optional true} :keyword]
-    [:llm/raw {:optional true} :any]
-    [:llm/embedding {:optional true} [:sequential number?]]
-    [:llm/embeddings {:optional true} [:sequential [:sequential number?]]]]))
+   [:and
+    [:map
+     [:llm/text {:optional true} [:maybe :string]]
+     [:llm/messages {:optional true} [:sequential Message]]
+     [:llm/tool-calls {:optional true} [:sequential ToolCall]]
+     [:llm/model {:optional true} [:maybe :string]]
+     [:llm/provider {:optional true} :keyword]
+     [:llm/usage {:optional true} [:maybe Usage]]
+     [:llm/finish-reason {:optional true} [:maybe :keyword]]
+     [:llm/request {:optional true} :map]
+     [:llm/latency-ms {:optional true} number?]
+     [:llm/started-at {:optional true} inst?]
+     [:llm/op {:optional true} :keyword]
+     [:llm/raw {:optional true} :any]
+     [:llm/structured {:optional true} :any]
+     [:llm/structured-error {:optional true} StructuredError]
+     [:llm/embedding {:optional true} [:sequential number?]]
+     [:llm/embeddings {:optional true} [:sequential [:sequential number?]]]]
+    [:fn {:error/message ":llm/structured and :llm/structured-error are mutually exclusive"}
+     (fn [response]
+       (not (and (contains? response :llm/structured)
+                 (contains? response :llm/structured-error))))]]))
 
 ;; ---------------------------------------------------------------------------
 ;; Eval suites
