@@ -1,0 +1,2 @@
+{:paths ["src"]
+ :deps {com.kirahowe/clj-llm {:local/root "../.."}}}
