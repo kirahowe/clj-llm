@@ -9,28 +9,26 @@
 
 ;; ## Configuration
 
-;; clj-llm reads configuration from an EDN file, usually named `llm.edn`. It uses [aero](https://github.com/juxt/aero), so API keys can come from `#env`, environment-specific values from `#profile`, and fallback values from `#or`.
+;; clj-llm reads configuration from an EDN file, usually named `llm.edn`. It uses [aero](https://github.com/juxt/aero), so environment-specific values can come from `#env` or `#profile`, and fallback values from `#or`.
 
 ;; ```clojure
 ;; #:llm{:providers
-;;       {:anthropic {:llm/adapter :anthropic
-;;                    :api-key #env ANTHROPIC_API_KEY}
-;;        :groq {:llm/adapter :openai
-;;               :base-url "https://api.groq.com/openai/v1"
-;;               :api-key #env GROQ_API_KEY}
-;;        :local {:llm/adapter :ollama
-;;                :base-url #or [#env OLLAMA_HOST "http://localhost:11434"]}}
+;;       {:ollama {:llm/adapter :ollama
+;;                 :base-url #or [#env OLLAMA_HOST
+;;                                "http://localhost:11434"]}}
 ;;       :models
-;;       {:smart #:llm{:provider :anthropic :model "claude-sonnet-4-6"}
-;;        :fast  #:llm{:provider :groq :model "llama-3.3-70b-versatile"}}
+;;       {:default    #:llm{:provider :ollama :model "llama3.2"}
+;;        :fast       #:llm{:provider :ollama :model "qwen3:8b"}
+;;        :embeddings #:llm{:provider :ollama :model "nomic-embed-text"}}
 ;;       :defaults
-;;       #:llm{:model :smart
+;;       #:llm{:model :default
+;;             :embedding-model :embeddings
 ;;             :max-tokens #profile {:dev 1024 :default 4096}}}
 ;; ```
 
-;; A provider is an account or endpoint, such as an Anthropic account, a Groq account, or an Ollama server. Its `:llm/adapter` tells clj-llm how to call it. The `:openai` adapter works with OpenAI and services that implement the OpenAI Chat Completions API.
+;; A provider is an account or endpoint. Here it is an Ollama server, and `:llm/adapter :ollama` tells clj-llm to use Ollama's native API.
 
-;; Model aliases such as `:smart` and `:fast` keep provider names and model ids out of application code. Changing an alias in config changes the model without changing a call site. Unqualified provider settings such as `:api-key` and `:base-url` are passed to the adapter. Keys under `:llm/...`, including `:llm/adapter` and optional `:llm/capabilities`, belong to clj-llm.
+;; Model aliases such as `:default` and `:fast` keep model ids out of application code. Changing an alias in config changes the model without changing a call site. Unqualified provider settings such as `:base-url` are passed to the adapter. Keys under `:llm/...`, including `:llm/adapter` and optional `:llm/capabilities`, belong to clj-llm.
 
 ;; Load a config file with `llm/read-config` (aero options such as `:profile` pass through):
 
@@ -76,7 +74,7 @@
 
 (:llm/model (llm/generate config "hi" {:llm/model "ollama/qwen3:8b"}))
 
-(:llm/model (llm/generate config "hi" {:llm/model #:llm{:provider :anthropic :model "claude-haiku-4-5"}}))
+(:llm/model (llm/generate config "hi" {:llm/model #:llm{:provider :ollama :model "gemma3:4b"}}))
 
 ;; ## Structured responses
 

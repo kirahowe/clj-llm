@@ -21,7 +21,7 @@
     #:llm{:cases    [#:llm{:id :capital
                                :input \"What is the capital of France?\"
                                :expected \"Paris\"}]
-            :variants [#:llm{:id :baseline :model :smart}
+            :variants [#:llm{:id :baseline :model :default}
                        #:llm{:id :cheap :model :fast :system \"Answer in one word.\"}]
             :scorers  [:includes]}
 

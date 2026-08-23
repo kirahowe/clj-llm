@@ -19,18 +19,19 @@ Create `llm.edn`:
 
 ```clojure
 #:llm{:providers
-      {:anthropic {:llm/adapter :anthropic
-                   :api-key #env ANTHROPIC_API_KEY}}
+      {:ollama {:llm/adapter :ollama
+                :base-url #or [#env OLLAMA_HOST
+                               "http://localhost:11434"]}}
       :models
-      {:default #:llm{:provider :anthropic
-                      :model "claude-sonnet-4-6"}}
+      {:default #:llm{:provider :ollama
+                      :model #or [#env OLLAMA_MODEL "llama3.2"]}}
       :defaults #:llm{:model :default}}
 ```
 
-Set your API key, start a REPL, and ask a question:
+Install [Ollama](https://ollama.com/), pull the model, then start a REPL:
 
 ```sh
-export ANTHROPIC_API_KEY="..."
+ollama pull llama3.2
 clojure
 ```
 

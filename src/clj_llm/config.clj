@@ -1,16 +1,17 @@
 (ns clj-llm.config
   "Loading and resolving clj-llm configuration.
 
-  Configuration is plain EDN data, read with aero — so API keys, base
-  URLs and model names live in config files, never in source, and you
+  Configuration is plain EDN data, read with aero — so base URLs and
+  model names live in config files, never in source, and you
   get aero's full tag set (#env, #or, #profile, #include, #ref, ...):
 
     #:llm{:providers
-          {:anthropic {:llm/adapter :anthropic
-                       :api-key #env ANTHROPIC_API_KEY}}
-          :models {:smart #:llm{:provider :anthropic
-                                :model \"claude-sonnet-4-6\"}}
-          :defaults #:llm{:model :smart
+          {:ollama {:llm/adapter :ollama
+                    :base-url #or [#env OLLAMA_HOST
+                                   \"http://localhost:11434\"]}}
+          :models {:default #:llm{:provider :ollama
+                                  :model \"llama3.2\"}}
+          :defaults #:llm{:model :default
                           :max-tokens #profile {:dev 1024 :default 4096}}}
 
   Providers are *accounts/endpoints* (an Anthropic account, a Groq
@@ -19,7 +20,7 @@
   overrides adapter feature reports for that endpoint. Unqualified keys
   in a provider map belong to that adapter (:api-key, :base-url, ...) and
   flow through untouched. Models are aliases so application code can say
-  :fast or :smart and the vendor mapping lives in config. :llm/defaults are
+  :default or :fast and the provider mapping lives in config. :llm/defaults are
   merged into every request; that includes :llm/on-interaction, a hook
   that receives every response record (see clj-llm.core/generate) — the
   raw material for evals.

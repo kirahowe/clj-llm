@@ -14,18 +14,19 @@ Create `llm.edn`:
 
 ```clojure
 #:llm{:providers
-      {:anthropic {:llm/adapter :anthropic
-                   :api-key #env ANTHROPIC_API_KEY}}
+      {:ollama {:llm/adapter :ollama
+                :base-url #or [#env OLLAMA_HOST
+                               "http://localhost:11434"]}}
       :models
-      {:default #:llm{:provider :anthropic
-                      :model "claude-sonnet-4-6"}}
+      {:default #:llm{:provider :ollama
+                      :model #or [#env OLLAMA_MODEL "llama3.2"]}}
       :defaults #:llm{:model :default}}
 ```
 
-Set your API key, start a REPL, and ask a question:
+Install [Ollama](https://ollama.com/), pull the model, then start a REPL:
 
 ```sh
-export ANTHROPIC_API_KEY="..."
+ollama pull llama3.2
 clojure
 ```
 
@@ -41,7 +42,7 @@ clojure
 
 That is the main API: pass a config and a prompt to `generate`, then read the answer from `:llm/text`. The full response also includes the conversation, model, token use, finish reason, latency, and original provider response.
 
-See [Getting started](getting_started.qmd) to configure OpenAI-compatible services or Ollama, select models, request structured data, and create embeddings.
+See [Getting started](getting_started.qmd) to select models, request structured data, and create embeddings.
 
 ## Common tasks
 

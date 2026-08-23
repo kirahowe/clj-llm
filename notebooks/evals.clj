@@ -48,7 +48,7 @@
                 #:llm{:id :arithmetic
                       :input "What is 17 * 23? Reply with only the number."
                       :expected "391"}]
-        :variants [#:llm{:id :baseline :model :smart}
+        :variants [#:llm{:id :baseline :model :default}
                    #:llm{:id :cheap :model :fast}]
         :scorers [:includes]})
 
@@ -98,7 +98,7 @@
  "(eval/run config
            (assoc suite :llm/scorers
                   [:includes
-                   (eval/llm-judge {:model :smart
+                   (eval/llm-judge {:model :default
                                     :criteria \"Factually accurate, and answers the question directly.\"})]))")
 
 ;; A judge's reply is parsed into `{:score ... :reasoning ...}`; unusable replies score 0.0 with an `:error`, so a misbehaving judge shows up in the numbers instead of vanishing.
@@ -123,7 +123,7 @@
             #:llm{:cases [#:llm{:id :password-reset
                                 :input "How do I reset my password?"
                                 :expected "reset link"}]
-                  :variants [#:llm{:id :smart :model :smart}
+                  :variants [#:llm{:id :default :model :default}
                              #:llm{:id :fast :model :fast}]
                   :task faq-pipeline
                   :scorers [:includes]}))
@@ -142,7 +142,7 @@
 
 (kind/code
  "(eval/llm-judge
-  {:model :smart
+  {:model :default
    :criteria \"Every suggested slug must fit the article's actual topic.\"
    :prompt-fn (fn [{:keys [criteria case response]}]
                 (str \"Criteria: \" criteria \"\\n\\n\"

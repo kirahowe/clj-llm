@@ -67,10 +67,9 @@
 
 (def config
   "A config shaped exactly like a real one, pointing at the :demo adapter. Swap this for (llm/read-config \"llm.edn\") and every example in the book runs against your real providers."
-  #:llm{:providers {:anthropic {:llm/adapter :demo}
-                    :ollama {:llm/adapter :demo}}
-        :models {:smart #:llm{:provider :anthropic :model "claude-sonnet-4-6"}
-                 :fast #:llm{:provider :ollama :model "llama3.2"}
+  #:llm{:providers {:ollama {:llm/adapter :demo}}
+        :models {:default #:llm{:provider :ollama :model "llama3.2"}
+                 :fast #:llm{:provider :ollama :model "qwen3:8b"}
                  :embeddings #:llm{:provider :ollama :model "nomic-embed-text"}}
-        :defaults #:llm{:model :smart
+        :defaults #:llm{:model :default
                         :embedding-model :embeddings}})

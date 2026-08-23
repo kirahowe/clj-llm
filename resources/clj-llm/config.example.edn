@@ -1,50 +1,26 @@
-;; Example clj-llm configuration. Copy somewhere (conventionally llm.edn at
-;; your project root, or a classpath resource) and load it with
-;; (llm/read-config "llm.edn"). Config is read with aero, so the full aero
-;; tag set is available (#env, #or, #profile, #include, #ref, ...). All
-;; secrets come from the environment via #env — nothing sensitive belongs
-;; in this file.
+;; Example clj-llm configuration. Copy this to llm.edn and load it with
+;; (llm/read-config "llm.edn"). It expects Ollama to be running locally.
 ;;
-;; Keys the library defines are namespaced :llm/...; every other key is
-;; yours. Inside a provider map, the unqualified keys (:api-key, :base-url,
-;; ...) belong to that provider's adapter. Optional :llm/capabilities
-;; booleans override the adapter's feature report for that endpoint.
+;; Config is read with aero, so #env, #or, #profile, #include, and #ref are
+;; available. Set OLLAMA_HOST or OLLAMA_MODEL to override the defaults below.
+;;
+;; Keys defined by clj-llm use the :llm namespace. Unqualified provider keys
+;; such as :base-url belong to the selected adapter. Optional
+;; :llm/capabilities booleans override that adapter's feature report.
 #:llm{:providers
-      {;; Anthropic's first-party API
-       :anthropic {:llm/adapter :anthropic
-                   :api-key #env ANTHROPIC_API_KEY}
+      {:ollama {:llm/adapter :ollama
+                :base-url #or [#env OLLAMA_HOST
+                               "http://localhost:11434"]}}
 
-       ;; OpenAI — the :openai adapter speaks the chat-completions protocol
-       :openai {:llm/adapter :openai
-                :api-key #env OPENAI_API_KEY}
-
-       ;; ...which also covers any OpenAI-compatible service via :base-url
-       :groq {:llm/adapter :openai
-              :base-url "https://api.groq.com/openai/v1"
-              :api-key #env GROQ_API_KEY}
-
-       :openrouter {:llm/adapter :openai
-                    :base-url "https://openrouter.ai/api/v1"
-                    :api-key #env OPENROUTER_API_KEY}
-
-       ;; Local models through Ollama's native API
-       :local {:llm/adapter :ollama
-               :base-url #or [#env OLLAMA_HOST "http://localhost:11434"]}}
-
-      ;; Aliases: application code asks for :smart or :fast; which provider
-      ;; and model that means is a config decision, swappable without a
-      ;; code change.
+      ;; Application code refers to aliases instead of model ids.
       :models
-      {:smart      #:llm{:provider :anthropic :model "claude-sonnet-4-6"}
-       :fast       #:llm{:provider :groq :model "llama-3.3-70b-versatile"}
-       :local-chat #:llm{:provider :local :model "llama3.2"}
-       :embeddings #:llm{:provider :openai :model "text-embedding-3-small"}}
+      {:default #:llm{:provider :ollama
+                      :model #or [#env OLLAMA_MODEL "llama3.2"]}
+       :fast #:llm{:provider :ollama :model "qwen3:8b"}
+       :embeddings #:llm{:provider :ollama :model "nomic-embed-text"}}
 
-      ;; Defaults applied to every request (and the default model aliases).
-      ;; :llm/on-interaction (a fn of one response record) is the hook for
-      ;; collecting every interaction — the raw material for evals; set it
-      ;; from code when you build/load the config.
+      ;; :llm/on-interaction may be set from code to collect completed calls.
       :defaults
-      #:llm{:model :smart
+      #:llm{:model :default
             :embedding-model :embeddings
             :max-tokens #profile {:dev 1024 :default 4096}}}

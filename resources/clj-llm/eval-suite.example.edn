@@ -20,14 +20,14 @@
       ;; What to compare — each variant is a bundle of request settings.
       ;; Benchmark a model change, a prompt change, or both.
       :variants
-      [#:llm{:id :baseline :model :smart}
+      [#:llm{:id :baseline :model :default}
        #:llm{:id :fast :model :fast}
-       #:llm{:id :terse :model :smart :system "Answer with the minimum number of words."}]
+       #:llm{:id :terse :model :default :system "Answer with the minimum number of words."}]
 
       ;; How to score. Built-ins: :exact-match, :includes, :matches. A
       ;; qualified symbol names a scorer fn in your code. For model-graded
       ;; scoring, call eval/run from code and add
-      ;; (eval/llm-judge {:model :smart :criteria "..."}) to the scorers.
+      ;; (eval/llm-judge {:model :default :criteria "..."}) to the scorers.
       :scorers [:includes]
 
       ;; Optional: what a case×variant actually runs. Defaults to a single
