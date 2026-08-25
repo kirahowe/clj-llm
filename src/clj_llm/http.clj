@@ -18,7 +18,7 @@
 
 (def ^:private client
   (delay (-> (HttpClient/newBuilder)
-             (.followRedirects HttpClient$Redirect/NORMAL)
+             (.followRedirects HttpClient$Redirect/NEVER)
              (.connectTimeout (Duration/ofSeconds 10))
              (.build))))
 

@@ -90,13 +90,26 @@
                               :embeddings [[0.25 0.5 0.75]]
                               :prompt_eval_count 3})
 
-      ;; Error path
+      ;; Error and redirect paths
       "/broken/v1/messages"
       (let [bytes (.getBytes (json/generate-string {:error {:message "bad key"}})
                              StandardCharsets/UTF_8)]
         (.sendResponseHeaders exchange 401 (alength bytes))
         (with-open [out (.getResponseBody exchange)]
-          (.write out bytes))))))
+          (.write out bytes)))
+
+      "/redirect/v1/messages"
+      (do
+        (.add (.getResponseHeaders exchange) "Location"
+              "/redirect-target/v1/messages")
+        (.sendResponseHeaders exchange 307 -1))
+
+      "/redirect-target/v1/messages"
+      (respond-json exchange
+                    {:content [{:type "text" :text "redirect followed"}]
+                     :model "claude-sonnet-4-6"
+                     :stop_reason "end_turn"
+                     :usage {:input_tokens 1 :output_tokens 1}}))))
 
 (defn- with-server [run-tests]
   (let [server (HttpServer/create (InetSocketAddress. "127.0.0.1" 0) 0)]
@@ -123,7 +136,10 @@
                             :base-url (str *base-url* "/ollama")}
                     :broken {:llm/adapter :anthropic
                              :base-url (str *base-url* "/broken")
-                             :api-key "wrong"}}
+                             :api-key "wrong"}
+                    :redirect {:llm/adapter :anthropic
+                               :base-url (str *base-url* "/redirect")
+                               :api-key "redirect-secret"}}
         :models {:default #:llm{:provider :anthropic :model "claude-sonnet-4-6"}
                  :embeddings #:llm{:provider :local :model "nomic-embed-text"}}
         :defaults #:llm{:model :default :embedding-model :embeddings}})
@@ -210,6 +226,17 @@
     (is (= :llm/http-error (:type (ex-data ex))))
     (is (= 401 (:status (ex-data ex))))
     (is (= "bad key" (get-in (ex-data ex) [:body :error :message])))))
+
+(deftest provider-redirects-are-refused
+  (let [ex (try
+             (llm/generate (config) "hello" {:llm/model "redirect/any"})
+             nil
+             (catch Exception e e))]
+    (is (some? ex))
+    (is (= :llm/http-error (:type (ex-data ex))))
+    (is (= 307 (:status (ex-data ex))))
+    (is (= ["/redirect/v1/messages"] (mapv :path @requests)))
+    (is (not-any? #(= "/redirect-target/v1/messages" (:path %)) @requests))))
 
 (deftest network-errors-are-typed
   (let [config (assoc-in (config) [:llm/providers :anthropic :base-url]

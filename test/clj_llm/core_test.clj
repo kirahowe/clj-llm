@@ -1,6 +1,7 @@
 (ns clj-llm.core-test
   "Core API tests against a scripted fake adapter — no network involved."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is testing]]
             [clj-llm.core :as llm]
             [clj-llm.provider :as provider]))
 
@@ -186,16 +187,24 @@
         (is (= [:user :assistant :tool :assistant]
                (map :role (:llm/messages response)))))))
 
-  (testing "tool errors are reported back to the model, not thrown"
-    (let [config (scripted-config [(tool-call-response [weather-tool-call])
+  (testing "tool errors are redacted before they are reported to the model"
+    (let [secret "database-password=hunter2"
+          requests (atom [])
+          config (scripted-config [(tool-call-response [weather-tool-call])
                                    (fn [request]
                                      (text-response
-                                      (:content (last (:llm/messages request)))))])
+                                      (:content (last (:llm/messages request)))))]
+                                  :requests requests)
           tool {:name "get-weather"
-                :fn (fn [_] (throw (ex-info "socket timeout" {})))}
-          response (llm/generate config "Weather?" {:llm/tools [tool]})]
-      (is (re-find #"Error executing tool get-weather: socket timeout"
-                   (:llm/text response)))))
+                :fn (fn [_] (throw (ex-info secret {})))}
+          response (llm/generate config "Weather?" {:llm/tools [tool]})
+          tool-message (->> (:llm/messages (second @requests))
+                            (filter #(= :tool (:role %)))
+                            first)]
+      (is (= "Error executing tool get-weather" (:content tool-message)))
+      (is (re-find #"Error executing tool" (:llm/text response)))
+      (is (not (str/includes? (:content tool-message) secret)))
+      (is (not (str/includes? (:llm/text response) secret)))))
 
   (testing "tools without :fn are returned for manual handling"
     (let [config (scripted-config [(tool-call-response [weather-tool-call])])

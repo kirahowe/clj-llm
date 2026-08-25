@@ -111,8 +111,8 @@
         result (try
                  (let [value ((:fn tool) (:arguments tool-call))]
                    (if (string? value) value (json/generate-string value)))
-                 (catch Exception e
-                   (str "Error executing tool " name ": " (ex-message e))))]
+                 (catch Exception _
+                   (str "Error executing tool " name)))]
     {:role :tool
      :tool-call-id id
      :name name
