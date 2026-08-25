@@ -61,6 +61,18 @@ onto the eval layer.
   nothing (e.g. a task built its response outside the run's sight),
   the returned response still serves as the record, as before.
   `print-summary` gains a `calls` column.
+- **Security-sensitive defaults are stricter.** Tool exception details
+  are redacted before the error is sent back to a provider, and provider
+  HTTP redirects are refused so authentication headers cannot cross a
+  redirect boundary. Tool documentation now treats model-supplied calls
+  and arguments as untrusted input requiring application validation and
+  authorization.
+- **Jackson is pinned to 2.21.4** to avoid the vulnerable asynchronous
+  parser code pulled transitively by Cheshire 6.2.0. clj-llm uses
+  Cheshire's synchronous parsing path, but the fixed dependency keeps
+  released applications and security scanners off the affected version.
+- **The prompt-server example is local-only and body-limited.** It binds
+  to `127.0.0.1` and rejects prompt bodies larger than 64 KiB.
 
 ### Migration notes
 - Commit `b3b8e4b` renamed the entire keyspace from `:lib/*` to

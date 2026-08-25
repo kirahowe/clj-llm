@@ -12,6 +12,8 @@
 
 ;; A tool is a map with a `:name`, a `:description`, and a JSON Schema under `:parameters`. Add a `:fn` if you want clj-llm to run it. When every requested tool has a matching function, clj-llm calls those functions with keywordized arguments, adds their results to the conversation, and asks the model to continue. The loop stops when the model answers or reaches `:llm/max-tool-rounds`, which defaults to 10:
 
+;; Tool calls and arguments are untrusted, model-controlled provider output. The JSON Schema under `:parameters` guides the model; clj-llm does not use it as runtime validation or authorization. An automatic `:fn` must validate and authorize its own inputs and enforce appropriate idempotency, rate or cost budgets, and other side-effect controls.
+
 (def weather-tool
   {:name "get-weather"
    :description "Look up current weather for a city"
@@ -34,13 +36,13 @@
 
 (filter #(#{:assistant :tool} (:role %)) (butlast (:llm/messages r)))
 
-;; A `:fn` may return a string or any JSON-encodable value (it will be serialized for the model). The library catches exceptions inside a `:fn` and reports them back to the model as tool errors instead of crashing the call, so the model gets a chance to recover or explain.
+;; A `:fn` may return a string or any JSON-encodable value (it will be serialized for the model). The library catches exceptions inside a `:fn` and reports a generic, redacted tool error back to the model instead of crashing the call. Exception details are not sent to the provider.
 
 ;; Usage accounting sums over all rounds, so `:llm/usage` on the final response reflects the whole loop, and `:llm/latency-ms` is wall-clock for everything.
 
 ;; ## Taking the loop into your own hands
 
-;; Omit `:fn` to handle calls yourself. The response uses `:llm/finish-reason :tool-calls` and puts pending calls under `:llm/tool-calls`. This is useful when execution needs approval, a queue, budget checks, or a custom loop:
+;; Omit `:fn` to approve and handle calls yourself. The response uses `:llm/finish-reason :tool-calls` and puts pending calls under `:llm/tool-calls`. Manual handling is appropriate when execution needs human approval or application-specific validation, authorization, idempotency, queueing, or budget controls:
 
 (def pending (llm/generate config "What's the weather in Berlin?"
                            {:llm/tools [(dissoc weather-tool :fn)]}))

@@ -103,6 +103,11 @@ Let the model call a Clojure function:
           {:city city :temperature-c 21 :sky "clear"})}]})
 ```
 
+Tool calls and arguments are untrusted model output. `:parameters` guides the
+model; it is not runtime validation or authorization. A tool `:fn` must validate
+and authorize inputs and enforce appropriate side-effect and cost controls.
+Omit `:fn` to inspect and approve calls before executing them.
+
 Create embeddings with a configured `:llm/embedding-model`:
 
 ```clojure

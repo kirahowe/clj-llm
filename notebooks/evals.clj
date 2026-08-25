@@ -92,6 +92,8 @@
 
 ;; In EDN suite files, scorers can be qualified symbols like `my.app.evals/terse-enough?`, resolved with `requiring-resolve` at run time, so file-based suites reach scorers defined in your codebase.
 
+;; Treat suite files as trusted code, not passive data. Qualified `:llm/task` and scorer symbols are loaded and invoked in the current process; do not run suites from untrusted sources.
+
 ;; For qualities such as tone, grounding, or helpfulness, `llm-judge` creates a scorer that asks a model to grade each response against written criteria. Prefer a different, stronger model than the one under test. Give each judge an `:id` when a suite uses more than one:
 
 (kind/code
