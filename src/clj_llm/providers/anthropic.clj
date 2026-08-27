@@ -7,7 +7,19 @@
     :base-url       optional, defaults to https://api.anthropic.com
     :version        optional anthropic-version header, defaults to 2023-06-01
     :headers        optional map of extra headers (e.g. anthropic-beta)
-    :timeout-ms     optional request timeout"
+    :endpoint-policy optional destination allow/reject function; see
+                     clj-llm.http/request-options
+    :timeout-ms     optional request deadline, defaults to 120s; covers the
+                    body for non-streaming calls and headers for streams
+    :max-response-bytes       optional success/error body limit, defaults to 8 MiB
+    :max-stream-line-bytes    optional SSE line limit, defaults to 1 MiB
+    :max-stream-bytes         optional whole-stream byte limit, defaults to 32 MiB
+    :stream-timeout-ms        optional whole-stream deadline, defaults to 10m
+    :stream-idle-timeout-ms   optional provider-read deadline, defaults to 60s
+
+  Provider config, including base URL, headers, credentials, and endpoint
+  policy, is trusted application configuration and must not come from
+  untrusted request or tenant data."
   (:require [cheshire.core :as json]
             [clojure.string :as str]
             [clj-llm.http :as http]
@@ -201,10 +213,11 @@
 
 (defmethod provider/-generate! :anthropic
   [provider-config {:llm/keys [on-chunk] :as request} _opts]
-  (let [http-req {:url (endpoint provider-config)
-                  :headers (headers provider-config)
-                  :timeout-ms (:timeout-ms provider-config)
-                  :body (build-request request {:stream? (boolean on-chunk)})}]
+  (let [http-req
+        (merge (http/request-options provider-config)
+               {:url (endpoint provider-config)
+                :headers (headers provider-config)
+                :body (build-request request {:stream? (boolean on-chunk)})})]
     (if on-chunk
       (-> (http/post-json-lines
            http-req

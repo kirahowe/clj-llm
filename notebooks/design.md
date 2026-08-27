@@ -63,6 +63,10 @@ New request keys may be ignored by adapters. New result keys are optional. New c
 
 Unqualified provider config keys belong to the adapter. clj-llm adds `:llm/name` when it resolves a configured provider so errors can identify that provider.
 
+Provider config is trusted application configuration. Base URLs, headers, credentials, and policy functions must not come from request, tenant, upload, or other untrusted data. Built-in HTTP calls validate and normalize their destination before constructing the JDK request and before network I/O; explicit local/private HTTP is allowed so Ollama and compatible development servers continue to work.
+
+An optional built-in provider `:endpoint-policy` receives `{:scheme :host :port :path}` for generation, streaming, and embeddings. The immutable values are lower-case scheme/host, effective port, normalized raw path, and an unbracketed IPv6 host. It is a URI destination allowlist hook only: it does not resolve/pin DNS and cannot safely enforce IP/network ranges against DNS rebinding. Use network egress controls or a custom transport/provider for stronger guarantees.
+
 Multimethods are used because provider configs remain maps and dispatch on the value of `:llm/adapter`. A Clojure protocol would dispatch on the map's type instead.
 
 ## Errors
@@ -71,8 +75,12 @@ Errors thrown by clj-llm use `ex-info` with a `:type` in `ex-data`:
 
 - `:llm/http-error` means the provider returned an unsuccessful HTTP response. Its data includes `:status`, `:url`, and parsed `:body`.
 - `:llm/network-error` means no complete response arrived because of a connection error, timeout, or dropped stream. Its data includes `:url` and wraps the underlying `IOException`.
-- Input and config errors use `:llm/invalid-request`, `:llm/invalid-config`, `:llm/invalid-suite`, `:llm/config-error`, `:llm/config-not-found`, or `:llm/invalid-case`.
+- `:llm/response-limit` means a response exceeded its configured body, line, cumulative-stream, whole-stream, or idle-read bound. Its data includes `:url`, `:limit-kind`, and `:limit` (plus HTTP `:status` for a bounded non-streaming body), never rejected body content.
+- `:llm/invalid-endpoint` means local URI preflight rejected a malformed, relative, non-HTTP(S), hostless, user-info/query/fragment-bearing, or invalid-port destination. Its safe data contains only `:type` and `:reason`.
+- `:llm/endpoint-rejected` means `:endpoint-policy` returned false/nil; `:llm/endpoint-policy-error` wraps a policy exception. Their data contains only `:type`, never the URL, headers, credentials, prompts, or request body. Neither case sends a request.
+- Input and config errors use `:llm/invalid-request`, `:llm/invalid-config`, `:llm/invalid-suite`, `:llm/invalid-run-options`, `:llm/config-error`, `:llm/config-not-found`, or `:llm/invalid-case`.
 - Lookup and feature errors use `:llm/unknown-adapter`, `:llm/unknown-scorer`, `:llm/missing-api-key`, `:llm/unsupported`, or `:llm/unsupported-capability`.
+- `:llm/eval-code-not-allowed` means an eval suite named a qualified task or scorer symbol without the explicit `{:allow-code? true}` capability. Its data identifies the `:symbol`, `:role`, suite `:path`, and exact opt-in; rejection occurs before namespace loading.
 - A provider stream event may use `:llm/stream-error`.
 
 An unsupported structured response fails before the adapter makes an HTTP call. Its data includes `:provider`, `:adapter`, `:model`, and `:capability`, and no interaction record is created.

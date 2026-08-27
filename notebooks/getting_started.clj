@@ -30,6 +30,23 @@
 
 ;; Model aliases such as `:default` and `:fast` keep model ids out of application code. Changing an alias in config changes the model without changing a call site. Unqualified provider settings such as `:base-url` are passed to the adapter. Keys under `:llm/...`, including `:llm/adapter` and optional `:llm/capabilities`, belong to clj-llm.
 
+;; > **Security:** Provider maps, `:base-url`, `:headers`, credentials, and `:endpoint-policy` are trusted application configuration. Never derive them from an HTTP request, tenant record, upload, or other untrusted input: built-in adapters send prompts and credentials to the configured destination.
+;;
+;; Built-in requests accept only absolute `http` or `https` destinations with a host and without user-info, a query, or a fragment. This deliberately preserves explicit HTTP for Ollama and compatible development servers. For a hosted deployment, application code may add an optional provider `:endpoint-policy` function (functions are not EDN) to restrict the normalized destination:
+;;
+;; ```clojure
+;; {:endpoint-policy
+;;  (fn [{:keys [scheme host port path]}]
+;;    (and (= "https" scheme)
+;;         (= "llm-gateway.example" host)
+;;         (= 443 port)
+;;         (.startsWith ^String path "/v1/")))}
+;; ```
+;;
+;; The hook runs for generation, streaming, and embeddings before the shared transport constructs the JDK request or performs network I/O. Its immutable map contains lower-case `:scheme` and `:host`, an effective `:port` (80/443 when omitted), and normalized raw `:path` (default `"/"`); IPv6 hosts have no URI brackets. False or nil throws `:llm/endpoint-rejected`, and an exception is wrapped as `:llm/endpoint-policy-error`. Invalid destinations throw `:llm/invalid-endpoint` with a safe `:reason`; none of these local error maps contains the URL, headers, credentials, or prompt.
+;;
+;; This hook does not resolve or pin a hostname to the checked address. It therefore cannot safely enforce IP/network ranges against DNS rebinding. Use network egress controls or a custom transport/provider that pins the checked address when stronger guarantees are required.
+
 ;; Load a config file with `llm/read-config` (aero options such as `:profile` pass through):
 
 ;; ```clojure
@@ -114,3 +131,5 @@
      :explain (:explain (ex-data e))}))
 
 ;; Provider HTTP errors use `{:type :llm/http-error :status ... :body ...}`. Network failures use `:llm/network-error`. Requesting structured output from an adapter or endpoint that does not support it uses `:llm/unsupported-capability`. The [design and compatibility](notebooks/design.md) chapter lists the other error types.
+
+;; Built-in adapters also bound provider responses before retaining them: non-streaming success/error bodies default to 8 MiB, one SSE/NDJSON line to 1 MiB, and a complete stream to 32 MiB. Streaming has a 10-minute whole-body deadline and a 60-second idle-read deadline. Tune these per provider with `:max-response-bytes`, `:max-stream-line-bytes`, `:max-stream-bytes`, `:stream-timeout-ms`, and `:stream-idle-timeout-ms`; existing `:timeout-ms` covers the complete non-streaming request and reaches through headers for a stream. A breached response bound closes the body and throws body-free `{:type :llm/response-limit :limit-kind ... :limit ...}` data.

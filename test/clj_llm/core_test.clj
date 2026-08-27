@@ -78,6 +78,23 @@
       (is (= [{:name "t" :parameters {}}]
              (get-in response [:llm/request :llm/tools])))))
 
+  (testing "local tool-control functions are scrubbed from records and provider requests"
+    (let [requests (atom [])
+          policy (constantly true)
+          validator (constantly true)
+          response (llm/generate
+                    (scripted-config
+                     [(text-response "ok")]
+                     :requests requests
+                     :defaults {:llm/tool-policy policy
+                                :llm/tool-argument-validator validator})
+                    "hi"
+                    {:llm/tools [{:name "t" :fn (constantly "x")}]})]
+      (doseq [request [(:llm/request response) (first @requests)]]
+        (is (not (contains? request :llm/tool-policy)))
+        (is (not (contains? request :llm/tool-argument-validator)))
+        (is (not (contains? (first (:llm/tools request)) :fn))))))
+
   (testing "a failing hook never breaks the call"
     (let [config (scripted-config [(text-response "ok")]
                                   :defaults {:llm/on-interaction
@@ -224,6 +241,199 @@
       (is (= 2 @n) "tool ran once per allowed round")
       (is (= [weather-tool-call] (:llm/tool-calls response))
           "unresolved tool calls surface to the caller when the cap is hit"))))
+
+(deftest tool-execution-preflight-controls
+  (testing "a policy rejects malicious arguments before any function in the batch runs"
+    (let [calls (atom 0)
+          policy-inputs (atom [])
+          malicious {:id "bad" :name "mutate"
+                     :arguments {:path "../../secrets" :value "stolen"}}
+          benign {:id "good" :name "mutate"
+                  :arguments {:path "profile" :value "safe"}}
+          tools [{:name "mutate"
+                  :description "mutate data"
+                  :fn (fn [_] (swap! calls inc))}
+                 {:name "audit"
+                  :fn (fn [_] (swap! calls inc))}]
+          response (llm/generate
+                    (scripted-config
+                     [(tool-call-response
+                       [malicious (assoc benign :name "audit")])])
+                    "change data"
+                    {:llm/tools tools
+                     :llm/tool-policy
+                     (fn [tool-call metadata]
+                       (swap! policy-inputs conj [tool-call metadata])
+                       (not= "../../secrets"
+                             (get-in tool-call [:arguments :path])))})]
+      (is (zero? @calls) "the allowed sibling is not partially executed")
+      (is (= 2 (count @policy-inputs)) "the complete batch is preflighted")
+      (is (every? #(not (contains? (second %) :fn)) @policy-inputs))
+      (is (= [{:tool-call malicious :reason :tool-policy-rejected}]
+             (:llm/tool-rejections response)))
+      (is (= [malicious (assoc benign :name "audit")]
+             (:llm/tool-calls response)))))
+
+  (testing "a policy exception is local and does not disclose details to the provider"
+    (let [secret "policy-secret=hunter2"
+          calls (atom 0)
+          requests (atom [])
+          response (llm/generate
+                    (scripted-config [(tool-call-response [weather-tool-call])]
+                                     :requests requests)
+                    "weather"
+                    {:llm/tools [{:name "get-weather"
+                                  :fn (fn [_] (swap! calls inc))}]
+                     :llm/tool-policy
+                     (fn [_ _] (throw (ex-info secret {})))})
+          rejection (first (:llm/tool-rejections response))]
+      (is (zero? @calls))
+      (is (= :tool-policy-error (:reason rejection)))
+      (is (= secret (:message rejection)))
+      (is (not (str/includes? (pr-str (:llm/messages response)) secret)))
+      (is (not (str/includes? (pr-str @requests) secret)))
+      (is (every? #(not (contains? % :llm/tool-rejections)) @requests))))
+
+  (testing "an argument validator rejects provider arguments for the whole batch"
+    (let [calls (atom 0)
+          validator-inputs (atom [])
+          malicious {:id "bad" :name "send-email"
+                     :arguments {:to "attacker@example.test" :body "secret"}}
+          benign {:id "good" :name "write-audit"
+                  :arguments {:event "attempted email"}}
+          response (llm/generate
+                    (scripted-config [(tool-call-response [malicious benign])])
+                    "send"
+                    {:llm/tools
+                     [{:name "send-email" :parameters {:type "object"}
+                       :fn (fn [_] (swap! calls inc))}
+                      {:name "write-audit"
+                       :fn (fn [_] (swap! calls inc))}]
+                     :llm/tool-argument-validator
+                     (fn [arguments metadata]
+                       (swap! validator-inputs conj [arguments metadata])
+                       (not (contains? arguments :to)))})]
+      (is (zero? @calls))
+      (is (= 2 (count @validator-inputs)))
+      (is (= [{:tool-call malicious :reason :tool-arguments-rejected}]
+             (:llm/tool-rejections response)))
+      (is (every? #(not (contains? (second %) :fn)) @validator-inputs))))
+
+  (testing "an argument-validator exception rejects without invoking the tool"
+    (let [calls (atom 0)
+          response (llm/generate
+                    (scripted-config [(tool-call-response [weather-tool-call])])
+                    "weather"
+                    {:llm/tools [{:name "get-weather"
+                                  :fn (fn [_] (swap! calls inc))}]
+                     :llm/tool-argument-validator
+                     (fn [_ _] (throw (ex-info "validator failed" {})))})]
+      (is (zero? @calls))
+      (is (= [{:tool-call weather-tool-call
+               :reason :tool-argument-validator-error
+               :message "validator failed"}]
+             (:llm/tool-rejections response)))))
+
+  (testing "a missing tool rejects the batch without running matched siblings"
+    (let [calls (atom 0)
+          unknown {:id "unknown" :name "not-registered" :arguments {}}
+          response (llm/generate
+                    (scripted-config
+                     [(tool-call-response [weather-tool-call unknown])])
+                    "weather"
+                    {:llm/tools [{:name "get-weather"
+                                  :fn (fn [_] (swap! calls inc))}]})]
+      (is (zero? @calls))
+      (is (= [{:tool-call unknown :reason :tool-not-found}]
+             (:llm/tool-rejections response)))))
+
+  (testing "an oversized batch is rejected all-or-none"
+    (let [calls (atom 0)
+          batch [weather-tool-call
+                 {:id "call_2" :name "get-weather"
+                  :arguments {:city "Paris"}}]
+          response (llm/generate
+                    (scripted-config [(tool-call-response batch)])
+                    "weather"
+                    {:llm/tools [{:name "get-weather"
+                                  :fn (fn [_] (swap! calls inc))}]
+                     :llm/max-tool-calls 1})]
+      (is (zero? @calls))
+      (is (= 2 (count (:llm/tool-rejections response))))
+      (is (every? #(= :tool-call-budget-exceeded (:reason %))
+                  (:llm/tool-rejections response)))
+      (is (= {:limit 1 :used 0 :requested 2 :remaining 1}
+             (:budget (first (:llm/tool-rejections response)))))))
+
+  (testing "the default budget rejects an eleven-call first batch"
+    (let [calls (atom 0)
+          batch (mapv (fn [n]
+                        {:id (str "call_" n)
+                         :name "get-weather"
+                         :arguments {:city (str "city-" n)}})
+                      (range 11))
+          response (llm/generate
+                    (scripted-config [(tool-call-response batch)])
+                    "weather"
+                    {:llm/tools [{:name "get-weather"
+                                  :fn (fn [_] (swap! calls inc))}]})]
+      (is (zero? @calls))
+      (is (= 11 (count (:llm/tool-rejections response))))
+      (is (= {:limit 10 :used 0 :requested 11 :remaining 10}
+             (:budget (first (:llm/tool-rejections response)))))))
+
+  (testing "a zero budget disables a one-call automatic batch"
+    (let [calls (atom 0)
+          response (llm/generate
+                    (scripted-config [(tool-call-response [weather-tool-call])])
+                    "weather"
+                    {:llm/tools [{:name "get-weather"
+                                  :fn (fn [_] (swap! calls inc))}]
+                     :llm/max-tool-calls 0})]
+      (is (zero? @calls))
+      (is (= {:limit 0 :used 0 :requested 1 :remaining 0}
+             (:budget (first (:llm/tool-rejections response)))))))
+
+  (testing "the call budget is total across rounds and never partially runs a later batch"
+    (let [calls (atom [])
+          requests (atom [])
+          round-one [{:id "call_1" :name "get-weather"
+                      :arguments {:city "Berlin"}}
+                     {:id "call_2" :name "get-weather"
+                      :arguments {:city "Paris"}}]
+          round-two [{:id "call_3" :name "get-weather"
+                      :arguments {:city "Rome"}}
+                     {:id "call_4" :name "get-weather"
+                      :arguments {:city "Oslo"}}]
+          response (llm/generate
+                    (scripted-config [(tool-call-response round-one)
+                                      (tool-call-response round-two)]
+                                     :requests requests)
+                    "weather"
+                    {:llm/tools [{:name "get-weather"
+                                  :fn (fn [arguments]
+                                        (swap! calls conj arguments)
+                                        "sunny")}]
+                     :llm/max-tool-calls 3})]
+      (is (= [{:city "Berlin"} {:city "Paris"}] @calls))
+      (is (= 2 (count @requests)))
+      (is (= round-two (:llm/tool-calls response)))
+      (is (= {:limit 3 :used 2 :requested 2 :remaining 1}
+             (:budget (first (:llm/tool-rejections response)))))))
+
+  (testing "a mixed manual batch remains manual and runs no functions"
+    (let [calls (atom 0)
+          batch [weather-tool-call
+                 {:id "call_2" :name "manual" :arguments {:city "Paris"}}]
+          response (llm/generate
+                    (scripted-config [(tool-call-response batch)])
+                    "weather"
+                    {:llm/tools [{:name "get-weather"
+                                  :fn (fn [_] (swap! calls inc))}
+                                 {:name "manual"}]})]
+      (is (zero? @calls))
+      (is (= batch (:llm/tool-calls response)))
+      (is (not (contains? response :llm/tool-rejections))))))
 
 (deftest streaming-callback-passthrough
   (let [config (scripted-config

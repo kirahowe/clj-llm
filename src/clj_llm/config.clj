@@ -19,11 +19,14 @@
   wire protocol — see clj-llm.provider; :llm/capabilities optionally
   overrides adapter feature reports for that endpoint. Unqualified keys
   in a provider map belong to that adapter (:api-key, :base-url, ...) and
-  flow through untouched. Models are aliases so application code can say
-  :default or :fast and the provider mapping lives in config. :llm/defaults are
-  merged into every request; that includes :llm/on-interaction, a hook
-  that receives every response record (see clj-llm.core/generate) — the
-  raw material for evals.
+  flow through untouched. Provider maps, base URLs, headers, credentials,
+  and endpoint policies are trusted application configuration; never
+  derive them from HTTP requests, tenant data, uploads, or other untrusted
+  input. Models are aliases so application code can say :default or :fast
+  and the provider mapping lives in config. :llm/defaults are merged into
+  every request; that includes :llm/on-interaction, a hook that receives
+  every response record (see clj-llm.core/generate) — the raw material
+  for evals.
 
   The rest of the library only ever sees the resulting map, so configs
   built by hand, by aero directly, or by an integrant system all work

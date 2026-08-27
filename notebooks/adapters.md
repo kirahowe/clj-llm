@@ -2,6 +2,8 @@
 
 The built-in adapters cover Anthropic, OpenAI's Chat Completions API and compatible services, and Ollama's native API. Add an adapter when you need another provider API, an internal gateway, or a test double. Adapters are multimethod implementations selected by `:llm/adapter` in provider config.
 
+Provider maps, base URLs, headers, credentials, and endpoint policies are trusted application configuration. Never derive them from request, tenant, upload, or other untrusted data: an adapter sends prompts and credentials to the configured destination.
+
 ## The minimum viable adapter
 
 ```clojure
@@ -12,13 +14,14 @@ The built-in adapters cover Anthropic, OpenAI's Chat Completions API and compati
 (defmethod provider/-generate! :acme
   [provider-config request _opts]
   (let [{:keys [body]} (http/post-json
-                        {:url (str (:base-url provider-config) "/complete")
-                         :headers {"authorization" (str "Bearer " (:api-key provider-config))}
-                         :timeout-ms (:timeout-ms provider-config)
-                         :body {:model (:llm/model request)
-                                :messages (mapv (fn [{:keys [role content]}]
-                                                  {:role (name role) :content content})
-                                                (:llm/messages request))}})]
+                        (merge
+                         (http/request-options provider-config)
+                         {:url (str (:base-url provider-config) "/complete")
+                          :headers {"authorization" (str "Bearer " (:api-key provider-config))}
+                          :body {:model (:llm/model request)
+                                 :messages (mapv (fn [{:keys [role content]}]
+                                                   {:role (name role) :content content})
+                                                 (:llm/messages request))}}))]
     {:message {:role :assistant :content (:completion body)}
      :model (:model body)
      :usage {:input-tokens (:prompt_tokens body)
@@ -72,7 +75,9 @@ Follow these rules:
 - **Apply `:llm/options` to the provider request last** with `provider/merge-options`. Non-nil values override fields and nil values remove them.
 - **Declare structured response support** by implementing `(provider/-supports? provider-config :json-schema-response opts)` and returning true. The `opts` map contains `{:request normalized-request}`, so support may depend on the request or model. The default is false, and provider config under `:llm/capabilities` overrides the adapter. Translate the response-format wrapper without changing its `:schema`; core parses the final JSON. Apply `:llm/options` after adding the provider's structured-output field.
 - **Streaming**: when `:llm/on-chunk` is present, call it with `{:type :text :text delta}` per text delta and still return the complete result. `clj-llm.http/post-json-lines` reduces over response lines (SSE and NDJSON both), and `clj-llm.http/sse-data` extracts SSE data payloads.
-- **Errors**: let `clj-llm.http`'s `:llm/http-error` and `:llm/network-error` propagate; throw `ex-info` with `{:type :llm/missing-api-key}` for configuration problems you detect yourself. The provider config carries `:llm/name` (the name it was registered under), which makes error messages point at the right config entry.
+- **Endpoint preflight**: built-in requests require an absolute `http` or `https` URI with a host, no user-info, query, or fragment, and a valid port. `http/request-options` forwards the optional provider `:endpoint-policy` consistently. Before the shared transport constructs a JDK request or performs network I/O, the policy receives an immutable `{:scheme :host :port :path}` map: lower-case scheme/host, effective port, normalized raw path, and IPv6 host without brackets. False/nil throws `:llm/endpoint-rejected`; exceptions become `:llm/endpoint-policy-error`; invalid destinations use `:llm/invalid-endpoint` plus a safe `:reason`. Explicit localhost/private HTTP remains supported.
+- **Policy limits**: endpoint policy performs no DNS resolution or address pinning, so use it for destination allowlists, not IP/network-range enforcement. DNS rebinding remains possible for a permitted hostname. Stronger guarantees require network egress controls or a custom transport/provider that connects to the checked address.
+- **Errors**: let `clj-llm.http`'s typed HTTP, network, endpoint, and policy errors propagate; throw `ex-info` with `{:type :llm/missing-api-key}` for configuration problems you detect yourself. Endpoint preflight error data never includes the URL, headers, credentials, or request body. The provider config carries `:llm/name` (the name it was registered under), which makes error messages point at the right config entry.
 - **Keep request building and response parsing separate from HTTP** so they can be tested without a server. `clj-llm.providers.ollama` is the shortest built-in example.
 - **Embeddings, lifecycle**: implement `-embed!` if the provider has embeddings; implement `-start`/`-stop` (each `[provider-config opts]`) only if your adapter needs real state like OAuth token refresh. The integrant bindings call them on system start/halt.
 

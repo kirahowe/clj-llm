@@ -3,11 +3,32 @@ All notable changes to this project will be documented in this file. This change
 
 ## [Unreleased]
 
-This release adds portable structured generation and closes the gaps
-found while migrating the library's first custom `:llm/task` consumer
-onto the eval layer.
+This release adds portable structured generation, explicit execution
+capabilities, and safer defaults at the tool and provider transport
+boundaries.
 
 ### Added
+- **All-or-none controls for automatic tool execution.** `generate`
+  accepts `:llm/tool-policy` (`[tool-call tool-metadata]`) and
+  `:llm/tool-argument-validator` (`[arguments tool-metadata]`); false/nil
+  or an exception rejects the complete provider-returned batch before
+  any tool function runs. `:llm/max-tool-calls` adds a total cross-round
+  invocation budget, defaulting to 10 independently of the existing
+  round limit. Unknown tools and insufficient remaining budget reject
+  the batch too. Structured local `:llm/tool-rejections` report call
+  identity and reasons without entering provider messages; policy,
+  validator, and tool function values are scrubbed from provider-bound
+  and replayable requests. Tools with no `:fn` retain the manual path.
+  `:parameters` remains provider guidance, not runtime validation.
+- **Bounded provider responses.** Every built-in adapter now inherits
+  shared limits for non-streaming success/error bodies (8 MiB), individual
+  SSE/NDJSON lines (1 MiB), and cumulative streams (32 MiB), plus a
+  10-minute whole-stream and 60-second idle-read deadline. Provider configs
+  can tune `:max-response-bytes`, `:max-stream-line-bytes`,
+  `:max-stream-bytes`, `:stream-timeout-ms`, and
+  `:stream-idle-timeout-ms`. Exact limits are accepted; overruns close the
+  response and throw body-free `:llm/response-limit` data. Existing
+  `:timeout-ms` still covers the complete non-streaming request and response.
 - **Portable structured responses for `generate`.** Requests accept
   `:llm/response-format {:type :json-schema :name ... :schema ...}`;
   Anthropic, OpenAI-compatible, and Ollama adapters map it to their
@@ -61,12 +82,34 @@ onto the eval layer.
   nothing (e.g. a task built its response outside the run's sight),
   the returned response still serves as the record, as before.
   `print-summary` gains a `calls` column.
+- **Executable eval-suite symbols now require an explicit capability.**
+  `eval/run` rejects qualified `:llm/task` and scorer symbols by default,
+  before `requiring-resolve` or namespace loading, with typed
+  `:llm/eval-code-not-allowed` data identifying the symbol, role, suite
+  path, and `{:allow-code? true}` opt-in. Only literal boolean `true`
+  grants the capability; false/nil stay safe and truthy non-booleans fail
+  with `:llm/invalid-run-options` before suite-source reading. The eval
+  CLI exposes the capability as `--allow-code`. Built-in keyword scorers,
+  inert suites, and function values already supplied in an in-memory
+  suite keep working without the option; executable code still runs
+  unsandboxed in the current JVM after opt-in.
 - **Security-sensitive defaults are stricter.** Tool exception details
   are redacted before the error is sent back to a provider, and provider
   HTTP redirects are refused so authentication headers cannot cross a
   redirect boundary. Tool documentation now treats model-supplied calls
   and arguments as untrusted input requiring application validation and
   authorization.
+- **Built-in provider endpoints are preflighted before network I/O.**
+  Generation, streaming, and embeddings now reject malformed, relative,
+  non-HTTP(S), hostless, credential-bearing, query/fragment-bearing, and
+  invalid-port destinations with safe typed local errors. Providers may
+  supply an optional `:endpoint-policy` over normalized
+  `{:scheme :host :port :path}` values; false/nil rejects and exceptions
+  are wrapped without exposing URLs, headers, credentials, or prompts.
+  Local/private HTTP remains supported. Provider configuration is
+  documented as trusted application input, and the policy is explicitly
+  not DNS-pinned IP/network-range enforcement; stronger deployments need
+  egress controls or a custom transport/provider.
 - **Jackson is pinned to 2.21.4** to avoid the vulnerable asynchronous
   parser code pulled transitively by Cheshire 6.2.0. clj-llm uses
   Cheshire's synchronous parsing path, but the fixed dependency keeps
@@ -82,6 +125,20 @@ onto the eval layer.
   `:llm/`).
 - Anything reading `:model` from a per-variant summary (or a stored
   report) now reads `:models`, a vector.
+- Automatic tool loops now execute at most 10 tool calls per `generate`
+  by default, across all rounds. Set `:llm/max-tool-calls` explicitly
+  when an application intentionally needs a different total; 0 disables
+  automatic invocation and returns local budget rejection records.
+  Applications that previously validated or authorized only inside
+  `:fn` can move those checks to `:llm/tool-argument-validator` and
+  `:llm/tool-policy` so an invalid batch has no partial side effects.
+- Eval callers that previously relied on qualified task/scorer symbols
+  must add `:allow-code? true` to the third argument of `eval/run`, for
+  example `(eval/run config suite {:allow-code? true})`. CLI invocations
+  must add `--allow-code` before or among the existing
+  `[suite.edn [llm.edn [profile]]]` positionals. Do not add the option
+  for data-only suites or in-memory function values; those remain the
+  safe/default and trusted application paths respectively.
 
 ## [0.1.0-alpha1] — 2026-08-03
 

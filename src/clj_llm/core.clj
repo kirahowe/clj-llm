@@ -58,6 +58,7 @@
   (:import (java.io BufferedReader StringReader)))
 
 (def default-max-tool-rounds 10)
+(def default-max-tool-calls 10)
 
 (defn read-config
   "Read a config EDN file; see clj-llm.config/read-config."
@@ -106,8 +107,72 @@
 (defn- find-tool [tools tool-call]
   (some #(when (= (name (:name %)) (name (:name tool-call))) %) tools))
 
-(defn- run-tool [tools {:keys [id name] :as tool-call}]
-  (let [tool (find-tool tools tool-call)
+(defn- tool-metadata [tool]
+  (dissoc tool :fn))
+
+(defn- rejection
+  ([tool-call reason]
+   {:tool-call tool-call :reason reason})
+  ([tool-call reason key value]
+   {:tool-call tool-call :reason reason key value}))
+
+(defn- hook-rejection [hook args tool-call rejected-reason error-reason]
+  (when hook
+    (try
+      (when-not (apply hook args)
+        (rejection tool-call rejected-reason))
+      (catch Exception e
+        (rejection tool-call error-reason
+                   :message (or (ex-message e) (str e)))))))
+
+(defn- preflight-tool-batch
+  [tools tool-calls policy argument-validator max-tool-calls tool-call-count]
+  (let [resolved (mapv (fn [tool-call]
+                         {:tool-call tool-call
+                          :tool (find-tool tools tool-call)})
+                       tool-calls)
+        missing (keep (fn [{:keys [tool-call tool]}]
+                        (when-not tool
+                          (rejection tool-call :tool-not-found)))
+                      resolved)]
+    (cond
+      (seq missing)
+      {:status :rejected :rejections (vec missing)}
+
+      (some (comp not :fn :tool) resolved)
+      {:status :manual}
+
+      (> (count tool-calls) (- max-tool-calls tool-call-count))
+      (let [budget {:limit max-tool-calls
+                    :used tool-call-count
+                    :requested (count tool-calls)
+                    :remaining (- max-tool-calls tool-call-count)}]
+        {:status :rejected
+         :rejections (mapv #(rejection % :tool-call-budget-exceeded
+                                       :budget budget)
+                           tool-calls)})
+
+      :else
+      (let [rejections
+            (keep (fn [{:keys [tool-call tool]}]
+                    (let [metadata (tool-metadata tool)]
+                      (or (hook-rejection policy
+                                          [tool-call metadata]
+                                          tool-call
+                                          :tool-policy-rejected
+                                          :tool-policy-error)
+                          (hook-rejection argument-validator
+                                          [(:arguments tool-call) metadata]
+                                          tool-call
+                                          :tool-arguments-rejected
+                                          :tool-argument-validator-error))))
+                  resolved)]
+        (if (seq rejections)
+          {:status :rejected :rejections (vec rejections)}
+          {:status :execute :resolved resolved})))))
+
+(defn- run-tool [{:keys [tool-call tool]}]
+  (let [{:keys [id name]} tool-call
         result (try
                  (let [value ((:fn tool) (:arguments tool-call))]
                    (if (string? value) value (json/generate-string value)))
@@ -117,10 +182,6 @@
      :tool-call-id id
      :name name
      :content result}))
-
-(defn- executable? [tools tool-calls]
-  (and (seq tool-calls)
-       (every? (fn [tc] (some-> (find-tool tools tc) :fn)) tool-calls)))
 
 (defn- add-usage [a b]
   (merge-with (fn [x y] (+ (or x 0) (or y 0))) (or a {}) (or b {})))
@@ -136,8 +197,13 @@
 ;; to a function of one record.
 
 (defn- request-record [request]
-  (cond-> (dissoc request :llm/on-chunk :llm/on-interaction)
-    (:llm/tools request) (update :llm/tools (partial mapv #(dissoc % :fn)))))
+  (cond-> (dissoc request
+                  :llm/on-chunk
+                  :llm/on-interaction
+                  :llm/tool-policy
+                  :llm/tool-argument-validator)
+    (:llm/tools request) (update :llm/tools
+                                 (partial mapv tool-metadata))))
 
 (defn- finish-record [response op request started-at start-nanos]
   (let [response (assoc response
@@ -185,10 +251,16 @@
     :llm/max-tokens, :llm/temperature
     :llm/tools       tool maps {:name :description :parameters :fn};
                      when every requested tool has a :fn it is invoked
-                     and the conversation continues automatically
-                     (bounded by :llm/max-tool-rounds, default 10).
-                     Tools without :fn are returned to you under
-                     :llm/tool-calls to handle manually.
+                     and the conversation continues automatically.
+                     Automatic batches are all-or-none and bounded by
+                     :llm/max-tool-rounds and :llm/max-tool-calls,
+                     both defaulting to 10. Tools without :fn are
+                     returned under :llm/tool-calls for manual handling.
+    :llm/tool-policy (fn [tool-call tool-metadata]) called before each
+                     automatic invocation; false/nil rejects the batch
+    :llm/tool-argument-validator
+                     (fn [arguments tool-metadata]); false/nil rejects
+                     the batch. :parameters is not runtime validation.
     :llm/on-chunk    (fn [{:keys [type text]}]) — called with each
                      streamed chunk; :type is :text today and new types
                      may appear, so ignore chunks you don't recognize.
@@ -216,6 +288,8 @@
                          onto this
           :tool-calls    unhandled tool calls, if any
           :model         model id as reported by the provider
+          :tool-rejections local-only rejection records, if automatic
+                         batch preflight fails; never sent to a provider
           :provider      provider name keyword
           :usage         {:input-tokens n :output-tokens n} summed over rounds
           :finish-reason :stop | :length | :tool-calls | :refusal | ...
@@ -244,30 +318,56 @@
          {:keys [provider model]} (config/resolve-model config (:llm/model request))
          request (assoc request :llm/model model)
          max-rounds (or (:llm/max-tool-rounds request) default-max-tool-rounds)
+         max-tool-calls (or (:llm/max-tool-calls request) default-max-tool-calls)
          tools (:llm/tools request)
+         policy (:llm/tool-policy request)
+         argument-validator (:llm/tool-argument-validator request)
+         provider-request (cond-> (dissoc request
+                                          :llm/tool-policy
+                                          :llm/tool-argument-validator)
+                            tools (update :llm/tools
+                                          (partial mapv tool-metadata)))
          started-at (java.time.Instant/now)
          start-nanos (System/nanoTime)
          result (loop [messages (vec (:llm/messages request))
                        usage nil
-                       round 0]
-                  (let [response (provider/generate! provider
-                                                     (assoc request :llm/messages messages))
+                       round 0
+                       tool-call-count 0]
+                  (let [response (provider/generate!
+                                  provider
+                                  (assoc provider-request :llm/messages messages))
                         message (:message response)
                         messages (conj messages message)
                         usage (add-usage usage (:usage response))
-                        tool-calls (:tool-calls message)]
-                    (if (and (executable? tools tool-calls) (< round max-rounds))
-                      (recur (into messages (map #(run-tool tools %)) tool-calls)
-                             usage
-                             (inc round))
-                      (cond-> #:llm{:text (:content message)
-                                    :messages messages
-                                    :model (:model response)
-                                    :provider (config/provider-name provider)
-                                    :usage usage
-                                    :finish-reason (:finish-reason response)
-                                    :raw (:raw response)}
-                        (seq tool-calls) (assoc :llm/tool-calls tool-calls)))))]
+                        tool-calls (:tool-calls message)
+                        terminal (cond-> #:llm{:text (:content message)
+                                               :messages messages
+                                               :model (:model response)
+                                               :provider (config/provider-name provider)
+                                               :usage usage
+                                               :finish-reason (:finish-reason response)
+                                               :raw (:raw response)}
+                                   (seq tool-calls)
+                                   (assoc :llm/tool-calls tool-calls))]
+                    (if (and (seq tool-calls) (< round max-rounds))
+                      (let [{:keys [status resolved rejections]}
+                            (preflight-tool-batch tools tool-calls policy
+                                                  argument-validator
+                                                  max-tool-calls
+                                                  tool-call-count)]
+                        (case status
+                          :execute
+                          (recur (into messages (map run-tool resolved))
+                                 usage
+                                 (inc round)
+                                 (+ tool-call-count (count tool-calls)))
+
+                          :rejected
+                          (assoc terminal :llm/tool-rejections rejections)
+
+                          :manual
+                          terminal))
+                      terminal)))]
      (finish-record (parse-structured-response result request)
                     :generate request started-at start-nanos))))
 

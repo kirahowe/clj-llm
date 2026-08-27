@@ -39,7 +39,7 @@
 
 ;; ## Layer 2: suites score cases against variants
 
-;; A suite has **cases** to run, **variants** to compare, and **scorers** to grade the answers. Pass it as a map or as the path to an EDN file:
+;; A suite has **cases** to run, **variants** to compare, and **scorers** to grade the answers. Pass it as an in-memory map or as a path to an EDN file. Path/file/reader sources are data-only by default: built-in keyword scorers and inert suite data run without enabling code.
 
 (def suite
   #:llm{:cases [#:llm{:id :capital
@@ -90,9 +90,11 @@
 (-> (eval/run config (assoc suite :llm/scorers [:includes terse-enough?]))
     :llm/summary)
 
-;; In EDN suite files, scorers can be qualified symbols like `my.app.evals/terse-enough?`, resolved with `requiring-resolve` at run time, so file-based suites reach scorers defined in your codebase.
-
-;; Treat suite files as trusted code, not passive data. Qualified `:llm/task` and scorer symbols are loaded and invoked in the current process; do not run suites from untrusted sources.
+;; An in-memory suite may contain already-instantiated task and scorer functions. This is the explicit trusted application path: the functions are application code already present in the process, and the runner does not pretend to sandbox them.
+;;
+;; EDN suite files can name scorers with qualified symbols such as `my.app.evals/terse-enough?` and can name a qualified `:llm/task`. These executable designators are **rejected by default before `requiring-resolve` and before the referenced namespace loads**. The exception has type `:llm/eval-code-not-allowed` and identifies the rejected `:symbol`, its `:role`, its suite `:path`, and the exact `:opt-in`.
+;;
+;; Only for a trusted executable suite, opt in with `(eval/run config suite-source {:allow-code? true})`. The value must be the literal boolean `true`: `false` and `nil` stay safe, and truthy non-booleans fail with `:llm/invalid-run-options` before the suite source is read. Resolution then loads the namespace and invocation runs with the current JVM's filesystem, environment, network, and credentials. `:allow-code?` is a capability switch, not a sandbox; use a separately restricted process or container when isolation is required.
 
 ;; For qualities such as tone, grounding, or helpfulness, `llm-judge` creates a scorer that asks a model to grade each response against written criteria. Prefer a different, stronger model than the one under test. Give each judge an `:id` when a suite uses more than one:
 
@@ -151,13 +153,13 @@
                      \"Article body:\\n\" (:article/body case) \"\\n\\n\"
                      \"Suggested slugs: \" (pr-str (:slugs response))))})")
 
-;; In EDN suites, `:llm/task` can be a qualified symbol.
+;; In EDN suites, `:llm/task` can be a qualified symbol only when the run opts in with `{:allow-code? true}`. The same option governs qualified scorer symbols; there is no second trust switch.
 
 ;; The unit being evaluated is the task function. A single model call is only the default task.
 
 ;; ## Thresholds: evals as a CI gate
 
-;; `:llm/thresholds` sets a minimum mean score for each scorer. Every variant must meet every configured threshold. The report then includes `:llm/passed?`, and the CLI (`bb eval`, or `clojure -M:dev -m clj-llm.eval`) exits non-zero when a threshold is missed or a case errors. Keep exploratory comparisons separate from CI suites when some variants are expected to score lower.
+;; `:llm/thresholds` sets a minimum mean score for each scorer. Every variant must meet every configured threshold. The report then includes `:llm/passed?`, and the CLI (`bb eval`, or `clojure -M:dev -m clj-llm.eval`) exits non-zero when a threshold is missed or a case errors. Its positional convention remains `[suite.edn [llm.edn [profile]]]`; executable symbols additionally require the explicit `--allow-code` flag, for example `bb eval --allow-code evals/executable.edn llm.edn ci`. `-h`/`--help` prints usage, unknown flags and extra positionals are errors, and `--` ends option parsing. Keep exploratory comparisons separate from CI suites when some variants are expected to score lower.
 
 (let [gated (assoc suite :llm/thresholds {:includes 0.9})]
   (select-keys (eval/run config gated) [:llm/passed? :llm/thresholds]))

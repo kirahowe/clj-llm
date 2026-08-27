@@ -25,6 +25,14 @@
   (is (m/validate spec/Request
                   {:llm/messages [{:role :user :content "hi"}]
                    :llm/response-format valid-format}))
+  (is (m/validate spec/Request
+                  {:llm/messages [{:role :user :content "hi"}]
+                   :llm/max-tool-calls 0
+                   :llm/tool-policy (constantly true)
+                   :llm/tool-argument-validator (constantly true)}))
+  (is (not (m/validate spec/Request
+                       {:llm/messages [{:role :user :content "hi"}]
+                        :llm/max-tool-calls -1})))
   (is (m/validate spec/Config
                   {:llm/providers {:p {:llm/adapter :custom
                                        :llm/capabilities
@@ -41,6 +49,12 @@
                   {:llm/structured-error
                    {:type :llm/invalid-structured-response
                     :message "invalid JSON"}}))
+  (is (m/validate
+       spec/Response
+       {:llm/tool-rejections
+        [{:tool-call {:id "call_1" :name "write" :arguments {:path "/tmp/x"}}
+          :reason :tool-call-budget-exceeded
+          :budget {:limit 1 :used 0 :requested 2 :remaining 1}}]}))
   (is (not (m/validate spec/Response
                        {:llm/structured-error
                         {:type :wrong :message "invalid JSON"}})))

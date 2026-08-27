@@ -9,8 +9,19 @@
     :llm/adapter  :ollama
     :base-url       optional, defaults to http://localhost:11434
     :headers        optional map of extra headers
-    :timeout-ms     optional request timeout (local models can be slow to
-                    load — the default is 120s)"
+    :endpoint-policy optional destination allow/reject function; see
+                     clj-llm.http/request-options
+    :timeout-ms     optional request deadline, defaults to 120s; covers the
+                    body for non-streaming calls and headers for streams
+    :max-response-bytes       optional success/error body limit, defaults to 8 MiB
+    :max-stream-line-bytes    optional NDJSON line limit, defaults to 1 MiB
+    :max-stream-bytes         optional whole-stream byte limit, defaults to 32 MiB
+    :stream-timeout-ms        optional whole-stream deadline, defaults to 10m
+    :stream-idle-timeout-ms   optional provider-read deadline, defaults to 60s
+
+  Provider config, including base URL, headers, and endpoint policy, is
+  trusted application configuration and must not come from untrusted
+  request or tenant data. Explicit local HTTP remains supported."
   (:require [cheshire.core :as json]
             [clj-llm.http :as http]
             [clj-llm.provider :as provider]))
@@ -125,10 +136,11 @@
 
 (defmethod provider/-generate! :ollama
   [provider-config {:llm/keys [on-chunk] :as request} _opts]
-  (let [http-req {:url (str (base-url provider-config) "/api/chat")
-                  :headers (:headers provider-config)
-                  :timeout-ms (:timeout-ms provider-config)
-                  :body (build-request request {:stream? (boolean on-chunk)})}]
+  (let [http-req
+        (merge (http/request-options provider-config)
+               {:url (str (base-url provider-config) "/api/chat")
+                :headers (:headers provider-config)
+                :body (build-request request {:stream? (boolean on-chunk)})})]
     (if on-chunk
       (-> (http/post-json-lines
            http-req
@@ -140,11 +152,14 @@
 
 (defmethod provider/-embed! :ollama
   [provider-config {:llm/keys [model input options]} _opts]
-  (let [{:keys [body]} (http/post-json
-                        {:url (str (base-url provider-config) "/api/embed")
-                         :headers (:headers provider-config)
-                         :timeout-ms (:timeout-ms provider-config)
-                         :body (provider/merge-options {:model model :input input} options)})]
+  (let [{:keys [body]}
+        (http/post-json
+         (merge
+          (http/request-options provider-config)
+          {:url (str (base-url provider-config) "/api/embed")
+           :headers (:headers provider-config)
+           :body (provider/merge-options {:model model :input input}
+                                         options)}))]
     {:embeddings (vec (:embeddings body))
      :model (:model body)
      :usage {:input-tokens (:prompt_eval_count body)}

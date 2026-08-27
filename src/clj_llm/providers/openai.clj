@@ -11,11 +11,23 @@
                          may be omitted for local servers that don't check auth
     :base-url            optional, defaults to https://api.openai.com/v1
     :headers             optional map of extra headers
-    :timeout-ms          optional request timeout
+    :endpoint-policy     optional destination allow/reject function; see
+                         clj-llm.http/request-options
+    :timeout-ms          optional request deadline, defaults to 120s; covers
+                         the body for non-streaming calls and headers for streams
+    :max-response-bytes       optional success/error body limit, defaults to 8 MiB
+    :max-stream-line-bytes    optional SSE line limit, defaults to 1 MiB
+    :max-stream-bytes         optional whole-stream byte limit, defaults to 32 MiB
+    :stream-timeout-ms        optional whole-stream deadline, defaults to 10m
+    :stream-idle-timeout-ms   optional provider-read deadline, defaults to 60s
     :legacy-max-tokens?  optional; the request's max-tokens is sent as
                          max_completion_tokens (the current protocol field)
                          by default — set true for older OpenAI-compatible
-                         servers that only understand max_tokens"
+                         servers that only understand max_tokens
+
+  Provider config, including base URL, headers, credentials, and endpoint
+  policy, is trusted application configuration and must not come from
+  untrusted request or tenant data."
   (:require [cheshire.core :as json]
             [clj-llm.http :as http]
             [clj-llm.provider :as provider]))
@@ -182,12 +194,15 @@
 
 (defmethod provider/-generate! :openai
   [provider-config {:llm/keys [on-chunk] :as request} _opts]
-  (let [http-req {:url (str (base-url provider-config) "/chat/completions")
-                  :headers (headers provider-config)
-                  :timeout-ms (:timeout-ms provider-config)
-                  :body (build-request request
-                                       {:stream? (boolean on-chunk)
-                                        :legacy-max-tokens? (:legacy-max-tokens? provider-config)})}]
+  (let [http-req
+        (merge
+         (http/request-options provider-config)
+         {:url (str (base-url provider-config) "/chat/completions")
+          :headers (headers provider-config)
+          :body (build-request
+                 request
+                 {:stream? (boolean on-chunk)
+                  :legacy-max-tokens? (:legacy-max-tokens? provider-config)})})]
     (if on-chunk
       (-> (http/post-json-lines
            http-req
@@ -202,11 +217,14 @@
 
 (defmethod provider/-embed! :openai
   [provider-config {:llm/keys [model input options]} _opts]
-  (let [{:keys [body]} (http/post-json
-                        {:url (str (base-url provider-config) "/embeddings")
-                         :headers (headers provider-config)
-                         :timeout-ms (:timeout-ms provider-config)
-                         :body (provider/merge-options {:model model :input input} options)})]
+  (let [{:keys [body]}
+        (http/post-json
+         (merge
+          (http/request-options provider-config)
+          {:url (str (base-url provider-config) "/embeddings")
+           :headers (headers provider-config)
+           :body (provider/merge-options {:model model :input input}
+                                         options)}))]
     {:embeddings (->> (:data body) (sort-by :index) (mapv :embedding))
      :model (:model body)
      :usage {:input-tokens (get-in body [:usage :prompt_tokens])}

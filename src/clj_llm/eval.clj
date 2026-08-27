@@ -15,8 +15,8 @@
      a per-variant summary, so changing a model or prompt becomes a
      benchmarked decision instead of a vibe.
 
-  A suite is plain data — inline, or an EDN file read with the same
-  aero reader as config files:
+  A suite may be inline data or an EDN source read with the same aero
+  reader as config files:
 
     #:llm{:cases    [#:llm{:id :capital
                                :input \"What is the capital of France?\"
@@ -29,6 +29,14 @@
     ;; => #:llm{:results [...] :summary {:by-variant {...}}
     ;;            :run-at #inst \"...\" :passed? true}
 
+  File/path/string-loaded suites are data-only by default. Qualified
+  :llm/task and scorer symbols are rejected before requiring-resolve and
+  before their namespaces load. Opt in explicitly with
+  (eval/run config suite {:allow-code? true}) or CLI --allow-code.
+  This executes code in the current JVM; it is not a sandbox. Direct
+  function values in an in-memory suite map are trusted application code
+  and do not require the option.
+
   Cases:    :llm/id, plus :llm/input (a prompt string) or
             :llm/messages (a full conversation), optional
             :llm/expected (whatever your scorers need), and any custom
@@ -40,9 +48,10 @@
             :llm/system, :llm/temperature, :llm/tools, ...) — a
             variant IS the thing you are comparing.
   Scorers:  keywords naming built-ins (:exact-match, :includes,
-            :matches), maps #:llm{:id kw :fn f}, bare fns, or
-            qualified symbols (resolved with requiring-resolve, so EDN
-            suites can name scorers defined in your code). A scorer
+            :matches), maps #:llm{:id kw :fn f}, bare fns, or qualified
+            symbols. Qualified symbols require :allow-code? true and are
+            then resolved with requiring-resolve, so their namespaces
+            load and their code runs in the current JVM. A scorer
             receives {:config ... :case ... :variant ... :response ...
             :interactions [...]} — :interactions is the vector of
             interaction records collected from LLM calls the task made
@@ -50,9 +59,10 @@
             else worth keeping (e.g. :reasoning). Use (llm-judge {...})
             for model-graded scoring — the sensible default when there
             is no mechanical ground truth.
-  Task:     :llm/task (a fn or qualified symbol) is what a case×variant
-            actually runs — (fn [{:keys [config case variant]}]) returning
-            a response map. The default task builds a request from the
+  Task:     :llm/task (a trusted in-memory fn, or a qualified symbol
+            allowed with :allow-code? true) is what a case×variant
+            actually runs — (fn [{:keys [config case variant]}])
+            returning a response map. The default task builds a request from the
             case and variant and calls clj-llm.core/generate, which evals a
             single LLM call. Supply your own task to eval any system
             *containing* LLM calls — a RAG pipeline, an agent loop, a
@@ -175,6 +185,38 @@
 
 ;; ---------------------------------------------------------------------------
 ;; Running suites
+
+(defn- code-not-allowed! [symbol role path]
+  (throw
+   (ex-info
+    (str "Executable eval " (name role) " symbol " symbol " at " (pr-str path)
+         " is disabled by default; pass {:allow-code? true} to "
+         "clj-llm.eval/run or --allow-code to the eval CLI.")
+    {:type :llm/eval-code-not-allowed
+     :symbol symbol
+     :role role
+     :path path
+     :opt-in {:allow-code? true}})))
+
+(defn- assert-code-option! [allow-code?]
+  (when-not (or (nil? allow-code?) (boolean? allow-code?))
+    (throw
+     (ex-info
+      (str "Eval option :allow-code? must be true, false, or nil; got "
+           (pr-str allow-code?))
+      {:type :llm/invalid-run-options
+       :option :allow-code?
+       :value allow-code?
+       :expected #{true false nil}}))))
+
+(defn- require-code-capability! [suite allow-code?]
+  (when-not (true? allow-code?)
+    (when-let [task (:llm/task suite)]
+      (when (qualified-symbol? task)
+        (code-not-allowed! task :task [:llm/task])))
+    (doseq [[i scorer] (map-indexed vector (:llm/scorers suite))]
+      (when (qualified-symbol? scorer)
+        (code-not-allowed! scorer :scorer [:llm/scorers i])))))
 
 (defn- resolve-symbol [sym error-type]
   (try
@@ -337,8 +379,18 @@
   :thresholds {...}} or anything clj-llm.config/read-config accepts (a
   path to an EDN suite file).
 
+  Qualified task and scorer symbols are executable code and are rejected
+  by default, before their namespaces load. Only the literal boolean
+  {:allow-code? true} opts in; false and nil remain safe, while any other
+  value fails with :llm/invalid-run-options before the suite source is
+  read. Function values in an in-memory suite map are already-instantiated
+  application code and remain the explicit trusted in-memory path; this
+  option does not sandbox either form.
+
   Options:
     :concurrency  how many cases to run in parallel (default 4)
+    :allow-code?  literal true resolves and invokes qualified task/scorer
+                  symbols; false/nil stay safe (default false)
 
   Returns #:llm{:results [...] :summary {:by-variant {...}}
   :run-at <Instant> :passed? <bool, present when the suite has
@@ -347,9 +399,12 @@
   :llm/interactions, the interaction records collected from LLM calls
   the task made while producing it."
   ([config suite] (run config suite nil))
-  ([config suite {:keys [concurrency] :or {concurrency 4}}]
-   (let [suite (spec/assert-suite!
+  ([config suite {:keys [concurrency allow-code?]
+                  :or {concurrency 4 allow-code? false}}]
+   (let [_code-option (assert-code-option! allow-code?)
+         suite (spec/assert-suite!
                 (if (map? suite) suite (config/read-config suite)))
+         _code-capability (require-code-capability! suite allow-code?)
          task (resolve-task suite)
          scorers (vec (map-indexed normalize-scorer (:llm/scorers suite)))
          variants (or (not-empty (:llm/variants suite)) [{:llm/id :default}])
@@ -404,22 +459,85 @@
     (line (map #(apply str (repeat % "-")) widths))
     (run! line rows)))
 
+(def ^:private cli-usage
+  (str "Usage: bb eval [--allow-code] [suite.edn [llm.edn [profile]]]\n"
+       "       clojure -M:dev -m clj-llm.eval [--allow-code] "
+       "[suite.edn [llm.edn [profile]]]\n\n"
+       "Options:\n"
+       "  --allow-code  Allow qualified :llm/task and scorer symbols to load and run\n"
+       "  -h, --help    Show this help\n\n"
+       "Defaults: suite=evals/suite.edn, config=llm.edn. "
+       "Use -- before a positional beginning with '-'."))
+
+(defn- invalid-cli! [message args]
+  (throw (ex-info message {:type :llm/invalid-cli
+                           :args (vec args)
+                           :usage cli-usage})))
+
+(defn- parse-cli-args [args]
+  (let [{:keys [allow-code? help? positionals]}
+        (loop [remaining (seq args)
+               parsed {:allow-code? false :help? false :positionals []}]
+          (if-let [arg (first remaining)]
+            (cond
+              (= "--" arg)
+              (update parsed :positionals into (next remaining))
+
+              (= "--allow-code" arg)
+              (if (:allow-code? parsed)
+                (invalid-cli! "Duplicate option --allow-code" args)
+                (recur (next remaining) (assoc parsed :allow-code? true)))
+
+              (#{"-h" "--help"} arg)
+              (recur (next remaining) (assoc parsed :help? true))
+
+              (str/starts-with? arg "-")
+              (invalid-cli! (str "Unknown option " arg) args)
+
+              :else
+              (recur (next remaining) (update parsed :positionals conj arg)))
+            parsed))]
+    (when (> (count positionals) 3)
+      (invalid-cli! "Expected at most suite, config, and profile positionals" args))
+    (let [[suite-path config-path profile] positionals]
+      {:suite-path (or suite-path "evals/suite.edn")
+       :config-path (or config-path "llm.edn")
+       :profile profile
+       :allow-code? allow-code?
+       :help? help?})))
+
+(defn- run-cli [args]
+  (let [{:keys [suite-path config-path profile allow-code? help?]}
+        (parse-cli-args args)]
+    (if help?
+      (do (println cli-usage) 0)
+      (let [config (llm/read-config config-path
+                                    (if profile {:profile (keyword profile)} {}))
+            report (run config suite-path {:allow-code? allow-code?})]
+        (print-summary report)
+        (let [errors (filter :llm/error (:llm/results report))
+              failed? (false? (:llm/passed? report))]
+          (doseq [{:llm/keys [case-id variant-id error]} errors]
+            (println "ERROR" case-id variant-id "-" error))
+          (when failed?
+            (println "FAILED: score thresholds not met:"
+                     (pr-str (:llm/thresholds report))))
+          (if (or (seq errors) failed?) 1 0))))))
+
 (defn -main
-  "Run a suite from the command line and print the summary.
-
-    clojure -M:dev -m clj-llm.eval [suite.edn [llm.edn [profile]]]
-
-  Defaults: evals/suite.edn and llm.edn. Exits non-zero when any case
-  errored or a threshold was missed (see :llm/thresholds)."
-  [& [suite-path config-path profile]]
-  (let [config (llm/read-config (or config-path "llm.edn")
-                                (if profile {:profile (keyword profile)} {}))
-        report (run config (or suite-path "evals/suite.edn"))]
-    (print-summary report)
-    (let [errors (filter :llm/error (:llm/results report))
-          failed? (false? (:llm/passed? report))]
-      (doseq [{:llm/keys [case-id variant-id error]} errors]
-        (println "ERROR" case-id variant-id "-" error))
-      (when failed?
-        (println "FAILED: score thresholds not met:" (pr-str (:llm/thresholds report))))
-      (System/exit (if (or (seq errors) failed?) 1 0)))))
+  "Run a suite from the command line. Qualified task/scorer symbols are
+  rejected unless --allow-code is present. Exits 2 for malformed
+  invocation, 1 for loading/run errors, case errors, or missed
+  thresholds, and 0 otherwise."
+  [& args]
+  (let [exit-code
+        (try
+          (run-cli args)
+          (catch Exception e
+            (binding [*out* *err*]
+              (println "ERROR:" (ex-message e))
+              (when (= :llm/invalid-cli (:type (ex-data e)))
+                (println)
+                (println cli-usage)))
+            (if (= :llm/invalid-cli (:type (ex-data e))) 2 1)))]
+    (System/exit exit-code)))

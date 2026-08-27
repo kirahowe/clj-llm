@@ -89,6 +89,74 @@
     (let [report (eval/run (lookup-config answers) path {:concurrency 1})]
       (is (= 4 (count (:llm/results report)))))))
 
+(defn qualified-task [{:keys [case]}]
+  #:llm{:text (:llm/expected case)})
+
+(defn always-one [_] {:score 1.0})
+
+(deftest executable-file-suite-requires-explicit-capability
+  (let [property "clj-llm.eval-code-fixture-loaded"
+        dir (java.nio.file.Files/createTempDirectory
+             "clj-llm-eval-code" (make-array java.nio.file.attribute.FileAttribute 0))
+        path (str dir "/suite.edn")
+        rejected-suite
+        #:llm{:cases [#:llm{:id :c :expected "trusted"}]
+              :variants [#:llm{:id :v}]
+              :task 'clj-llm.eval-code-fixture/task
+              :scorers ['clj-llm.eval-code-fixture/scorer]}
+        allowed-suite
+        #:llm{:cases [#:llm{:id :c :expected "trusted"}]
+              :variants [#:llm{:id :v}]
+              :task 'clj-llm.eval-test/qualified-task
+              :scorers ['clj-llm.eval-test/always-one]}]
+    (System/clearProperty property)
+    (spit path (pr-str rejected-suite))
+    (doseq [value ["false" :no 1]]
+      (let [ex (try
+                 (eval/run {} path {:concurrency 1 :allow-code? value})
+                 nil
+                 (catch clojure.lang.ExceptionInfo e e))]
+        (is (= {:type :llm/invalid-run-options
+                :option :allow-code?
+                :value value
+                :expected #{true false nil}}
+               (ex-data ex)))
+        (is (str/includes? (ex-message ex) "must be true, false, or nil"))
+        (is (nil? (System/getProperty property))
+            "a truthy non-boolean must not load or run qualified code")))
+    (let [ex (try
+               (eval/run {} (Object.) {:allow-code? 1})
+               nil
+               (catch clojure.lang.ExceptionInfo e e))]
+      (is (= :llm/invalid-run-options (:type (ex-data ex)))
+          "option validation precedes reading or resolving the suite source"))
+    (doseq [value [false nil]]
+      (let [ex (try
+                 (eval/run {} path {:concurrency 1 :allow-code? value})
+                 nil
+                 (catch clojure.lang.ExceptionInfo e e))]
+        (is (= :llm/eval-code-not-allowed (:type (ex-data ex))))
+        (is (nil? (System/getProperty property)))))
+    (let [ex (try
+               (eval/run {} path {:concurrency 1})
+               nil
+               (catch clojure.lang.ExceptionInfo e e))]
+      (is (= {:type :llm/eval-code-not-allowed
+              :symbol 'clj-llm.eval-code-fixture/task
+              :role :task
+              :path [:llm/task]
+              :opt-in {:allow-code? true}}
+             (ex-data ex)))
+      (is (nil? (System/getProperty property))
+          "rejection happens before the referenced namespace's top-level side effect"))
+    (spit path (pr-str allowed-suite))
+    (let [report (eval/run {} path {:concurrency 1 :allow-code? true})]
+      (is (= "trusted"
+             (get-in report [:llm/results 0 :llm/response :llm/text])))
+      (is (= 1.0
+             (get-in report [:llm/summary :by-variant :v :scores :scorer-0 :mean]))))
+    (System/clearProperty property)))
+
 (deftest variant-request-keys-flow-through
   (let [seen (atom [])]
     (defmethod provider/-generate! ::spy [_ {:llm/keys [model] :as request} _opts]
@@ -231,6 +299,19 @@
         "the task ran without invoking the LLM adapter")
     (is (= 1.0 (get-in report [:llm/summary :by-variant :v :scores :includes :mean])))))
 
+(deftest trusted-in-memory-functions-need-no-symbol-capability
+  (let [suite #:llm{:cases [#:llm{:id :c :expected "trusted"}]
+                    :variants [#:llm{:id :v}]
+                    :task (fn [{:keys [case]}]
+                            #:llm{:text (:llm/expected case)})
+                    :scorers [(fn [{:keys [case response]}]
+                                {:score (if (= (:llm/expected case)
+                                               (:llm/text response))
+                                          1.0 0.0)})]}
+        report (eval/run {} suite {:concurrency 1})]
+    (is (= 1.0
+           (get-in report [:llm/summary :by-variant :v :scores :scorer-0 :mean])))))
+
 (deftest custom-task-cases-need-no-input
   (let [suite #:llm{:cases [#:llm{:id :c :expected "custom" :domain/data "payload"}]
                     :variants [#:llm{:id :v}]
@@ -282,13 +363,24 @@
 ;; ---------------------------------------------------------------------------
 ;; Scorers as qualified symbols
 
-(defn always-one [_] {:score 1.0})
-
 (deftest qualified-symbol-scorer
   (let [suite (assoc suite :llm/scorers ['clj-llm.eval-test/always-one])
-        report (eval/run (lookup-config answers) suite {:concurrency 1})]
-    (is (= 1.0 (get-in report [:llm/summary :by-variant :good :scores :scorer-0 :mean])))
-    (is (= 1.0 (get-in report [:llm/summary :by-variant :bad :scores :scorer-0 :mean])))))
+        rejected (try
+                   (eval/run (lookup-config answers) suite {:concurrency 1})
+                   nil
+                   (catch clojure.lang.ExceptionInfo e e))]
+    (is (= {:type :llm/eval-code-not-allowed
+            :symbol 'clj-llm.eval-test/always-one
+            :role :scorer
+            :path [:llm/scorers 0]
+            :opt-in {:allow-code? true}}
+           (ex-data rejected)))
+    (let [report (eval/run (lookup-config answers) suite
+                           {:concurrency 1 :allow-code? true})]
+      (is (= 1.0
+             (get-in report [:llm/summary :by-variant :good :scores :scorer-0 :mean])))
+      (is (= 1.0
+             (get-in report [:llm/summary :by-variant :bad :scores :scorer-0 :mean]))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Interaction collection — a task can make more than one LLM call
@@ -330,3 +422,52 @@
         result (first (:llm/results report))]
     (is (seq @outer) "the outer hook still received the record")
     (is (seq (:llm/interactions result)) "the result also carries the record")))
+
+;; ---------------------------------------------------------------------------
+;; CLI parsing and capability forwarding
+
+(deftest eval-cli-options
+  (is (= {:suite-path "suite.edn"
+          :config-path "config.edn"
+          :profile "ci"
+          :allow-code? true
+          :help? false}
+         (#'eval/parse-cli-args ["suite.edn" "--allow-code" "config.edn" "ci"])))
+  (is (= {:suite-path "evals/suite.edn"
+          :config-path "llm.edn"
+          :profile nil
+          :allow-code? false
+          :help? false}
+         (#'eval/parse-cli-args [])))
+  (is (true? (:help? (#'eval/parse-cli-args ["--help"]))))
+  (is (= "--suite.edn"
+         (:suite-path (#'eval/parse-cli-args ["--" "--suite.edn"]))))
+  (let [exit-code (atom nil)
+        output (with-out-str
+                 (reset! exit-code (#'eval/run-cli ["--help"])))]
+    (is (zero? @exit-code))
+    (is (str/includes? output "--allow-code")))
+  (doseq [args [["--unknown"]
+                ["--allow-code" "--allow-code"]
+                ["suite" "config" "profile" "extra"]]]
+    (let [ex (try
+               (#'eval/parse-cli-args args)
+               nil
+               (catch clojure.lang.ExceptionInfo e e))]
+      (is (= :llm/invalid-cli (:type (ex-data ex))))
+      (is (str/includes? (:usage (ex-data ex)) "Usage: bb eval")))))
+
+(deftest eval-cli-forwards-code-capability
+  (let [calls (atom [])
+        report #:llm{:results [] :summary {:by-variant {}}}]
+    (with-redefs [llm/read-config (fn [path opts]
+                                    (swap! calls conj [:config path opts])
+                                    :config)
+                  eval/run (fn [config suite opts]
+                             (swap! calls conj [:run config suite opts])
+                             report)
+                  eval/print-summary (fn [_] nil)]
+      (is (zero? (#'eval/run-cli ["--allow-code" "suite.edn" "config.edn" "ci"])))
+      (is (= [[:config "config.edn" {:profile :ci}]
+              [:run :config "suite.edn" {:allow-code? true}]]
+             @calls)))))

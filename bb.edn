@@ -27,7 +27,7 @@
               :depends [book]
               :task (shell {:dir "docs"} "quarto preview")}
 
-  eval {:doc "Run an eval suite: bb eval [suite.edn [llm.edn [profile]]]"
+  eval {:doc "Run evals: bb eval [--allow-code] [suite.edn [llm.edn [profile]]]"
         :task (apply clojure "-M:dev" "-m" "clj-llm.eval"
                      *command-line-args*)}
 

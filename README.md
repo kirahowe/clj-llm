@@ -28,6 +28,16 @@ Create `llm.edn`:
       :defaults #:llm{:model :default}}
 ```
 
+> [!WARNING]
+> Provider maps, base URLs, headers, credentials, and endpoint policies are
+> trusted application configuration. Never derive them from an HTTP request,
+> tenant record, upload, or other untrusted input. Built-in adapters reject
+> malformed and non-HTTP(S) destinations before network I/O and support an
+> optional host/port allowlist hook, but that hook does not pin DNS results or
+> enforce IP ranges; use network egress controls or a custom transport/provider
+> when those guarantees are required. Explicit local HTTP remains supported for
+> Ollama and compatible development servers.
+
 Install [Ollama](https://ollama.com/), pull the model, then start a REPL:
 
 ```sh
@@ -104,9 +114,12 @@ Let the model call a Clojure function:
 ```
 
 Tool calls and arguments are untrusted model output. `:parameters` guides the
-model; it is not runtime validation or authorization. A tool `:fn` must validate
-and authorize inputs and enforce appropriate side-effect and cost controls.
-Omit `:fn` to inspect and approve calls before executing them.
+model; it is not runtime validation or authorization. Automatic batches are
+all-or-none and execute at most 10 calls across all rounds by default. Use
+`:llm/tool-policy` for authorization, `:llm/tool-argument-validator` for a real
+runtime validator, and `:llm/max-tool-calls` for an application-specific total.
+Rejected calls stay local under `:llm/tool-rejections`; omit `:fn` when a human
+or application workflow should inspect and approve calls manually.
 
 Create embeddings with a configured `:llm/embedding-model`:
 
@@ -131,6 +144,11 @@ Run cases against different models, prompts, or settings:
 
 (eval/print-summary report)
 ```
+
+Qualified task or scorer symbols are executable JVM code and are rejected by
+default. Only trusted suites should opt in with `{:allow-code? true}` (or
+`--allow-code` through `bb eval`); use a restricted process or container when
+the suite needs isolation.
 
 ## Providers
 

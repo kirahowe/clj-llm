@@ -62,6 +62,24 @@
     [:parameters {:optional true} [:maybe :map]]
     [:fn {:optional true} fn?]]))
 
+(def ToolRejection
+  (m/schema
+   [:map
+    [:tool-call ToolCall]
+    [:reason [:enum :tool-not-found
+              :tool-policy-rejected
+              :tool-policy-error
+              :tool-arguments-rejected
+              :tool-argument-validator-error
+              :tool-call-budget-exceeded]]
+    [:message {:optional true} :string]
+    [:budget {:optional true}
+     [:map
+      [:limit nat-int?]
+      [:used nat-int?]
+      [:requested pos-int?]
+      [:remaining nat-int?]]]]))
+
 (def Usage
   (m/schema [:map-of :keyword [:maybe number?]]))
 
@@ -125,6 +143,9 @@
     [:llm/temperature {:optional true} number?]
     [:llm/tools {:optional true} [:sequential Tool]]
     [:llm/max-tool-rounds {:optional true} pos-int?]
+    [:llm/max-tool-calls {:optional true} nat-int?]
+    [:llm/tool-policy {:optional true} fn?]
+    [:llm/tool-argument-validator {:optional true} fn?]
     [:llm/on-chunk {:optional true} fn?]
     [:llm/on-interaction {:optional true} fn?]
     [:llm/response-format {:optional true} ResponseFormat]
@@ -148,6 +169,7 @@
      [:llm/text {:optional true} [:maybe :string]]
      [:llm/messages {:optional true} [:sequential Message]]
      [:llm/tool-calls {:optional true} [:sequential ToolCall]]
+     [:llm/tool-rejections {:optional true} [:sequential ToolRejection]]
      [:llm/model {:optional true} [:maybe :string]]
      [:llm/provider {:optional true} :keyword]
      [:llm/usage {:optional true} [:maybe Usage]]
@@ -187,13 +209,18 @@
   (m/schema [:map [:llm/id {:optional true} :keyword]]))
 
 (def Scorer
-  "A scorer designator: a built-in's keyword, a function, a qualified
-  symbol resolving to either, or a map of :llm/id and :llm/fn."
+  "A scorer designator: a built-in's keyword, a trusted in-memory
+  function, a qualified symbol allowed by eval/run's :allow-code?
+  option, or a map of :llm/id and :llm/fn."
   (m/schema
    [:or :keyword fn? qualified-symbol?
     [:map [:llm/id :keyword] [:llm/fn fn?]]]))
 
 (def Suite
+  "Eval suite data. Qualified task/scorer symbols are valid designators,
+  but eval/run rejects them unless :allow-code? is literal true; false
+  and nil remain safe. Function values are the trusted in-memory
+  application path."
   (m/schema
    [:and
     [:map
