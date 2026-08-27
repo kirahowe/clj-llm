@@ -27,7 +27,16 @@ Set `OLLAMA_HOST` or `OLLAMA_MODEL` to use a different Ollama endpoint or
 model. The `handler` itself is ordinary Ring data: the request becomes a
 prompt, and the response is a Ring response map.
 
-The server binds explicitly to `127.0.0.1`; it is not exposed to other hosts.
-This is a minimal demonstration, not a production service: it has only a prompt
-body size limit and does not provide authentication, authorization, rate
-limits, request timeouts, or other deployment hardening.
+Run the isolated example tests without Ollama or an open port:
+
+```bash
+clojure -M:test
+```
+
+The server is hard-coded to bind to `127.0.0.1`; it is local demonstration
+code, not a production service or deployment template. It has no
+authentication, authorization, rate or cost controls, bounded concurrency,
+end-to-end request deadlines, safe logging policy, secret management, or
+deployment hardening. The prompt body limit is its only request guardrail.
+A reverse proxy alone does not supply these missing security boundaries or
+make this handler safe to expose.
