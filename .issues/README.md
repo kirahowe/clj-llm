@@ -1,10 +1,31 @@
-# Security issue index
+# Repository issue index
 
-This directory records security findings and boundary decisions from the pre-alpha review begun on 2026-08-25. Start here before changing tool execution, HTTP transport, eval loading, provider configuration, or the prompt-server example.
+This directory records repository-local engineering issues with stable IDs.
+Update status and evidence in the individual file when work lands; keep
+filenames and IDs stable so commits and future discussions can link to them.
+These are implementation records, not published vulnerability advisories.
 
-These are repository-local engineering issues, not published vulnerability advisories. Update status and evidence in the individual file when work lands; keep filenames and IDs stable so commits and future discussions can link to them.
+## Open onboarding and release work
 
-## Issue status
+These issues turn the reviewed earliest-user feedback into prescriptive work
+for the next alpha. Their ownership is intentionally separated: release and
+installation, configuration pedagogy, conversation calls, example config
+lifecycle, Ollama operations, and streaming presentation.
+
+| ID | Issue | Priority | Current disposition |
+| --- | --- | --- | --- |
+| ONB-006 | [Publish and verify the advertised installation coordinate](006-release-installation.md) | P0 release blocker | Open; required before advertising the next alpha as a Maven dependency |
+| ONB-007 | [Lead onboarding with the minimal local configuration](007-minimal-local-configuration.md) | P0 onboarding | Open; required before next-alpha documentation |
+| ONB-008 | [Standardize the canonical conversation idiom](008-canonical-conversation-idiom.md) | P0 onboarding consistency | Open; required before next-alpha documentation and examples |
+| ONB-009 | [Make example configuration lifecycle explicit](009-example-config-lifecycle.md) | P0 example reliability | Open; required before next-alpha examples |
+| ONB-010 | [Document and verify Ollama readiness failures](010-ollama-readiness-errors.md) | P0 first-run diagnostics | Open; required before next-alpha onboarding |
+| ONB-011 | [Reduce streaming ceremony without changing its contract](011-streaming-example-ceremony.md) | P1 onboarding clarity | Open; presentation cleanup before next alpha |
+
+## Security review issues
+
+The security findings and boundary decisions below come from the pre-alpha
+review begun on 2026-08-25. Start here before changing tool execution, HTTP
+transport, eval loading, provider configuration, or the prompt-server example.
 
 | ID | Issue | Priority | Current disposition |
 | --- | --- | --- | --- |
@@ -14,7 +35,9 @@ These are repository-local engineering issues, not published vulnerability advis
 | SEC-004 | [Define a policy for custom provider endpoints](004-provider-endpoint-policy.md) | Medium when config is untrusted | Resolved; built-in destinations are validated and support a normalized allowlist hook |
 | SEC-005 | [Keep the prompt-server example out of production](005-prompt-server-production-boundary.md) | Low while loopback-only | Accepted limitation with regression coverage; reopen if example scope expands |
 
-No implementation issue remains open from this review. SEC-005 remains a deliberate guardrail rather than a production-service design.
+No implementation issue remains open from the security review. SEC-005 remains
+a deliberate security guardrail rather than a production-service design. The
+open onboarding/release issues above do not reopen those resolved findings.
 
 ## Earlier findings resolved during the review
 
@@ -35,8 +58,15 @@ The review traced runtime entry points, provider HTTP requests and responses, to
 When closing an issue:
 
 1. Update the issue's status, final decision, and exact verification evidence.
-2. Add behavioral tests for the changed trust boundary; do not test only schema or plumbing.
-3. Update README/notebook sources and regenerate published docs when user-facing behavior changes.
-4. Record migrations in `CHANGELOG.md` if defaults or public request keys change.
-5. Run `bb ci` plus a real HTTP/tool/CLI smoke scenario covering the fix.
-6. Mark the issue resolved only when its implementation, evidence, and release documentation land together.
+2. Add focused behavioral tests when observable behavior or a trust boundary
+   changes; test the contract rather than schema or plumbing alone.
+3. For documentation and examples, run a copy-paste check or exercise the
+   actual user-facing surface described by the changed material.
+4. Update README/notebook sources and regenerate published docs when
+   user-facing behavior changes.
+5. Record migrations in `CHANGELOG.md` if defaults or public request keys
+   change.
+6. Run the applicable focused checks and CI, plus a real smoke scenario for the
+   changed surface; do not require unrelated trust-boundary checks.
+7. Mark the issue resolved only when its implementation, evidence, and
+   applicable release documentation land together.
