@@ -1,17 +1,21 @@
 (ns example.ask
+  "Sends one prompt to an explicitly configured language model."
   (:require [clj-llm.core :as llm]
             [clojure.string :as str]))
 
-(def config (llm/read-config "llm.edn"))
+(def ^:private config
+  #:llm{:providers {:ollama {:llm/adapter :ollama}}
+        :defaults #:llm{:model "ollama/llama3.2"}})
 
 (defn ask
-  "Return the answer to one prompt. Useful from a REPL or another function."
-  [prompt]
+  "Returns the generated text for `prompt` using `config`."
+  [config prompt]
   (:llm/text (llm/generate config prompt)))
 
 (defn -main
+  "Reads a prompt from command-line arguments or standard input and prints its answer."
   [& args]
   (let [prompt (if (seq args)
                  (str/join " " args)
                  (slurp *in*))]
-    (println (ask prompt))))
+    (println (ask config prompt))))

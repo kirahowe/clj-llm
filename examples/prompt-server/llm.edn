@@ -1,8 +1,0 @@
-;; Set OLLAMA_HOST and OLLAMA_MODEL to override these defaults.
-#:llm{:providers
-      {:ollama {:llm/adapter :ollama
-                :base-url #or [#env OLLAMA_HOST "http://localhost:11434"]}}
-      :models
-      {:default #:llm{:provider :ollama
-                      :model #or [#env OLLAMA_MODEL "llama3.2"]}}
-      :defaults #:llm{:model :default}}

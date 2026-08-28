@@ -1,2 +1,5 @@
-{:paths ["src"]
- :deps {com.kirahowe/clj-llm {:local/root "../.."}}}
+{:paths ["src" "resources"]
+ :deps {com.kirahowe/clj-llm {:local/root "../.."}}
+ :aliases
+ {:test {:extra-paths ["test"]
+         :main-opts ["-m" "example.chat-test"]}}}

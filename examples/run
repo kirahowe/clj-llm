@@ -1,0 +1,29 @@
+#!/bin/sh
+
+usage() {
+  printf '%s\n' "Usage: $0 {ask|chat|prompt-server} [args...]" >&2
+}
+
+case ${1-} in
+  ask)
+    project=ask
+    namespace=example.ask
+    ;;
+  chat)
+    project=chat
+    namespace=example.chat
+    ;;
+  prompt-server)
+    project=prompt-server
+    namespace=example.prompt-server
+    ;;
+  *)
+    usage
+    exit 64
+    ;;
+esac
+shift
+
+examples_dir=$(CDPATH= cd "$(dirname "$0")" && pwd -P) || exit
+cd "$examples_dir/$project" || exit
+exec clojure -M -m "$namespace" "$@"

@@ -1,4 +1,4 @@
-{:paths ["src"]
+{:paths ["src" "resources"]
  :deps {com.kirahowe/clj-llm {:local/root "../.."}
         ring/ring-jetty-adapter {:mvn/version "1.12.2"}}
  :aliases
