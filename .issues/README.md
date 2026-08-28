@@ -5,21 +5,23 @@ Update status and evidence in the individual file when work lands; keep
 filenames and IDs stable so commits and future discussions can link to them.
 These are implementation records, not published vulnerability advisories.
 
-## Open onboarding and release work
+## Onboarding and release work
 
 These issues turn the reviewed earliest-user feedback into prescriptive work
-for the next alpha. Their ownership is intentionally separated: release and
-installation, configuration pedagogy, conversation calls, example config
-lifecycle, Ollama operations, and streaming presentation.
+for the next alpha. ONB-007 through ONB-011 are resolved after implementation,
+final gates, and two sequential clean adversarial reviews. Release preparation
+for ONB-006 is complete, but the issue remains open until an immutable tag is
+created and pushed, the artifact is deployed with real Clojars credentials, and
+the published coordinate resolves cleanly from Maven.
 
 | ID | Issue | Priority | Current disposition |
 | --- | --- | --- | --- |
-| ONB-006 | [Publish and verify the advertised installation coordinate](006-release-installation.md) | P0 release blocker | Open; required before advertising the next alpha as a Maven dependency |
-| ONB-007 | [Lead onboarding with the minimal local configuration](007-minimal-local-configuration.md) | P0 onboarding | Open; required before next-alpha documentation |
-| ONB-008 | [Standardize the canonical conversation idiom](008-canonical-conversation-idiom.md) | P0 onboarding consistency | Open; required before next-alpha documentation and examples |
-| ONB-009 | [Make example configuration lifecycle explicit](009-example-config-lifecycle.md) | P0 example reliability | Open; required before next-alpha examples |
-| ONB-010 | [Document and verify Ollama readiness failures](010-ollama-readiness-errors.md) | P0 first-run diagnostics | Open; required before next-alpha onboarding |
-| ONB-011 | [Reduce streaming ceremony without changing its contract](011-streaming-example-ceremony.md) | P1 onboarding clarity | Open; presentation cleanup before next alpha |
+| ONB-006 | [Publish and verify the advertised installation coordinate](006-release-installation.md) | P0 release blocker | Open; release preparation complete, blocked on immutable tag creation/push, real Clojars deployment, and clean Maven resolution |
+| ONB-007 | [Lead onboarding with the minimal local configuration](007-minimal-local-configuration.md) | P0 onboarding | Resolved; implementation and final gates passed, followed by two sequential clean adversarial reviews |
+| ONB-008 | [Standardize the canonical conversation idiom](008-canonical-conversation-idiom.md) | P0 onboarding consistency | Resolved; implementation and final gates passed, followed by two sequential clean adversarial reviews |
+| ONB-009 | [Make example configuration lifecycle explicit](009-example-config-lifecycle.md) | P0 example reliability | Resolved; implementation and final gates passed, followed by two sequential clean adversarial reviews |
+| ONB-010 | [Document and verify Ollama readiness failures](010-ollama-readiness-errors.md) | P0 first-run diagnostics | Resolved; implementation and final gates passed, followed by two sequential clean adversarial reviews |
+| ONB-011 | [Reduce streaming ceremony without changing its contract](011-streaming-example-ceremony.md) | P1 onboarding clarity | Resolved; implementation and final gates passed, followed by two sequential clean adversarial reviews |
 
 ## Security review issues
 
@@ -37,7 +39,7 @@ transport, eval loading, provider configuration, or the prompt-server example.
 
 No implementation issue remains open from the security review. SEC-005 remains
 a deliberate security guardrail rather than a production-service design. The
-open onboarding/release issues above do not reopen those resolved findings.
+remaining open release issue above does not reopen those resolved findings.
 
 ## Earlier findings resolved during the review
 

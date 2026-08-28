@@ -1,24 +1,24 @@
 # Reduce streaming ceremony without changing its contract
 
 - **ID:** ONB-011
-- **Status:** Open
+- **Status:** Resolved
 - **Priority:** P1 onboarding clarity
-- **Alpha disposition:** Complete the presentation cleanup before the next alpha; retain the existing API
+- **Alpha disposition:** Completed for the next alpha presentation; existing API retained
 
 ## Problem
 
-Streaming examples repeatedly embed an anonymous callback that destructures a
-chunk, checks its type, prints text, and flushes. The type check is intentional
-forward-compatible behavior, but repeating its implementation inside every
-`generate` call makes the call itself hard to scan and makes streaming appear
-to be a separate control flow.
+At issue creation, streaming examples repeatedly embedded an anonymous callback
+that destructured a chunk, checked its type, printed text, and flushed. The type
+check was intentional forward-compatible behavior, but repeating its
+implementation inside every `generate` call made the call itself hard to scan
+and made streaming appear to be a separate control flow.
 
-The current API already has the desired semantics: streaming is enabled with
-typed `:llm/on-chunk`, and the same synchronous `generate` call still returns
-the complete canonical response. The fix is to name the presentation callback,
+The API already had, and still has, the desired semantics: streaming is enabled
+with typed `:llm/on-chunk`, and the same synchronous `generate` call returns
+the complete canonical response. The presentation fix was to name the callback,
 not add another streaming abstraction.
 
-## Current evidence
+## Evidence at issue creation
 
 - `src/clj_llm/spec.clj:86-89` defines typed chunk maps and requires callbacks
   to ignore event types they do not recognize.
@@ -29,7 +29,21 @@ not add another streaming abstraction.
 - `test/clj_llm/core_test.clj:438-449` proves typed chunks reach the callback
   and `generate` returns the complete text response after streaming.
 - `README.md:73-82`, `notebooks/conversations_and_streaming.clj`, and
-  `examples/chat/src/example/chat.clj:21-25` repeat the anonymous callback.
+  `examples/chat/src/example/chat.clj:21-25` repeated the anonymous callback.
+
+## Implementation evidence — 2026-08-27
+
+- `README.md`, `notebooks/conversations_and_streaming.clj`, and
+  `examples/chat/src/example/chat.clj` now define small named `print-chunk`
+  callbacks that handle only `:text`, print and flush at the presentation
+  boundary, and are passed through the ordinary opts map.
+- The examples retain the complete `generate` response for text, messages,
+  and continuation. `test/clj_llm/core_test.clj` covers ordered typed callback
+  delivery together with the complete returned response; observed root CI
+  completed 101 tests with 564 assertions.
+- The observed offline book render succeeded with invalid `OLLAMA_HOST` and
+  `OLLAMA_MODEL` values, exercising the revised streaming examples without
+  provider access.
 
 ## Design work
 
@@ -81,18 +95,38 @@ ONB-008 owns the prompt/history idiom; ONB-009 owns example config lifecycle.
 
 ## Acceptance criteria
 
-- [ ] Root, conversation-guide, and terminal-chat streaming examples pass a
+- [x] Root, conversation-guide, and terminal-chat streaming examples pass a
   named callback to `:llm/on-chunk` instead of embedding repeated anonymous
   callback bodies.
-- [ ] Every named callback accepts a typed chunk, handles only `:text`, and
+- [x] Every named callback accepts a typed chunk, handles only `:text`, and
   safely ignores unknown event types.
-- [ ] Terminal-specific printing and flushing remain in example callback code,
+- [x] Terminal-specific printing and flushing remain in example callback code,
   not the library.
-- [ ] Streaming examples bind or otherwise use the complete `generate` return
+- [x] Streaming examples bind or otherwise use the complete `generate` return
   value and state that it remains the canonical response.
-- [ ] Focused behavioral coverage observes ordered typed chunks and the same
+- [x] Focused behavioral coverage observes ordered typed chunks and the same
   complete final text/messages contract from the returned response.
-- [ ] Conversation streaming uses the same opts map for `:llm/messages` and
+- [x] Conversation streaming uses the same opts map for `:llm/messages` and
   `:llm/on-chunk`, without manual message construction.
-- [ ] No new stream function, `on-text` option, channel/lazy return, async
+- [x] No new stream function, `on-text` option, channel/lazy return, async
   primitive, or alternate response contract is introduced.
+
+## Final verification evidence — 2026-08-27
+
+- The root `README.md`, rendered conversation book source
+  `notebooks/conversations_and_streaming.clj`, and terminal chat example
+  `examples/chat/src/example/chat.clj` each use a named `print-chunk` callback.
+  Each callback receives typed chunks, handles only `:text`, and keeps terminal
+  printing and flushing outside the library.
+- Focused complete-response coverage in `test/clj_llm/core_test.clj` observed
+  ordered typed callback chunks while the same `generate` call returned the
+  complete canonical text and messages response. Root CI completed 101 tests
+  and 564 assertions with zero failures or errors; formatting and clj-kondo
+  were clean.
+- The actual `examples/run chat` streaming smoke loaded and exited successfully,
+  exercising the terminal chat path, and the book rendered offline successfully
+  with deliberately invalid `OLLAMA_HOST` and `OLLAMA_MODEL` values.
+- Two sequential clean adversarial reviews each ended with no findings. The
+  reviewed cutover retained typed `:llm/on-chunk` on the ordinary opts map and
+  the canonical final response; it introduced no stream function, `on-text`
+  option, async primitive, channel/lazy return, or alternate API.

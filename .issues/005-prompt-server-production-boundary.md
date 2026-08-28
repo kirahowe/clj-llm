@@ -12,22 +12,22 @@ These omissions are acceptable for a local demonstration. They become security a
 
 ## Evidence
 
-- `examples/prompt-server/src/example/prompt_server.clj:8-25` reads at most
+- `examples/prompt-server/src/example/prompt_server.clj:9-22` reads at most
   64 KiB plus one byte and returns `413` before `llm/generate` when oversized.
-- `examples/prompt-server/src/example/prompt_server.clj:27-30` hard-codes Jetty
+- `examples/prompt-server/src/example/prompt_server.clj:45-47` hard-codes Jetty
   to `127.0.0.1`.
-- `examples/prompt-server/test/example/prompt_server_test.clj:14-38` exercises
+- `examples/prompt-server/test/example/prompt_server_test.clj:49-75` exercises
   the actual Ring handler at exactly 64 KiB and at 64 KiB plus one, including
   response status/body and the no-model-call invariant for rejection.
-- `examples/prompt-server/test/example/prompt_server_test.clj:40-48` invokes
+- `examples/prompt-server/test/example/prompt_server_test.clj:77-111` invokes
   `-main` with an isolated Jetty substitute and verifies the handler plus exact
   loopback launch options without opening a port.
 - `examples/prompt-server/deps.edn:4-6` and
-  `examples/prompt-server/README.md:30-34` provide the example-local
+  `examples/prompt-server/README.md:52-56` provide the example-local
   `clojure -M:test` command.
-- `examples/prompt-server/README.md:36-42` rejects production use, enumerates
+- `examples/prompt-server/README.md:58-64` rejects production use, enumerates
   the missing controls, and states that a reverse proxy alone is insufficient.
-- `notebooks/examples.md:96-150` shows the guarded, loopback-only source and
+- `notebooks/examples.md:151-232` shows the guarded, loopback-only source and
   repeats the production boundary in the source notebook.
 
 ## Reopen conditions

@@ -1,23 +1,23 @@
 # Lead onboarding with the minimal local configuration
 
 - **ID:** ONB-007
-- **Status:** Open
+- **Status:** Resolved
 - **Priority:** P0 onboarding
-- **Alpha disposition:** Must be completed before the next alpha documentation is published
+- **Alpha disposition:** Completed for the next alpha documentation
 
 ## Problem
 
-The first-success path currently teaches an Aero file, an Ollama provider, a
-model alias, a default alias, and environment fallbacks before the first call.
-Those are useful application features, but they make configuration appear more
-complex than the public schema requires and introduce file-path failure before
-a user can exercise `generate`.
+At issue creation, the first-success path taught an Aero file, an Ollama
+provider, a model alias, a default alias, and environment fallbacks before the
+first call. Although those are useful application features, that ordering made
+configuration appear more complex than the public schema requires and
+introduced file-path failure before a user could exercise `generate`.
 
-A valid minimal inline Ollama config already exists within the current API. The
-onboarding problem does not require a constructor, implicit provider/model
-selection, or another configuration language.
+A valid minimal inline Ollama config existed within the API then and remains
+valid. The onboarding problem did not require a constructor, implicit
+provider/model selection, or another configuration language.
 
-## Current evidence
+## Evidence at issue creation
 
 - `src/clj_llm/spec.clj:105-116` requires only `:llm/providers`; both
   `:llm/models` and `:llm/defaults` are optional. `ModelDesignator` accepts a
@@ -26,11 +26,44 @@ selection, or another configuration language.
   URL to `http://localhost:11434`.
 - `src/clj_llm/config.clj:31-40` states that inline maps and Aero/Integrant
   results are equivalent to the rest of the library.
-- `README.md:18-29` currently leads with `llm.edn`, `#or`, `#env`, a named
-  model alias, and a default model alias.
+- `README.md:18-29` led with `llm.edn`, `#or`, `#env`, a named model alias,
+  and a default model alias.
 - `resources/clj-llm/config.example.edn` and
   `notebooks/getting_started.clj` present multi-model/Aero features valuable as
   later reference material, not prerequisites for the first response.
+
+## Implementation evidence — 2026-08-27
+
+- `README.md`, `notebooks/index.md`, and `notebooks/getting_started.clj`
+  now lead with the same two-layer inline Ollama map and defer file-backed
+  configuration, Aero, aliases, multiple providers, and Integrant until after
+  the first generation path.
+- The checkout launch commands in `README.md` and `notebooks/index.md`
+  select the repository's Clojure classpath; that development concern is
+  separate from configuration lookup. The first-success configuration is inline
+  and therefore independent of the process working directory.
+
+## Final verification — 2026-08-27
+
+- The root `bb ci` gate passed with 101 tests and 564 assertions, zero
+  failures or errors, and clean formatting and clj-kondo checks. The chat suite
+  passed with 2 tests and 5 assertions, and the prompt-server suite passed with
+  5 tests and 13 assertions.
+- The offline book render succeeded with deliberately invalid `OLLAMA_HOST` and
+  `OLLAMA_MODEL`, confirming that rendering the onboarding material does not
+  require environment-provided Ollama configuration.
+- From `/tmp`, the checkout's `examples/run` launcher successfully ran the
+  ask, chat, and prompt-server examples: ask and prompt-server returned `OK`,
+  while chat loaded and exited normally. This verifies the launcher's explicit
+  checkout classpath selection; it is distinct from the first-success snippet's
+  working-directory independence, which comes from carrying its configuration
+  inline rather than looking up a config file.
+- A focused smoke copied only the documented inline Ollama setup and first call;
+  an installed `llama3.2` model returned `OK` through Ollama 0.32.5. Real
+  classpath resources also resolved and parsed, and the README's explicit
+  `nomic-embed-text` example returned 768 dimensions, preserving the later
+  advanced configuration paths.
+- Two sequential clean adversarial reviews completed with no findings.
 
 ## Design work
 
@@ -74,18 +107,18 @@ examples load and inject configuration.
 
 ## Acceptance criteria
 
-- [ ] The root quickstart defines the inline two-layer Ollama config before any
+- [x] The root quickstart defines the inline two-layer Ollama config before any
   file-backed, alias, Aero, profile, multi-provider, or Integrant material.
-- [ ] The getting-started guide uses the same minimal map and explanation for
+- [x] The getting-started guide uses the same minimal map and explanation for
   its first executable generation path.
-- [ ] The first-success snippets do not require a current working directory,
+- [x] The first-success snippets do not require a current working directory,
   environment variable, config constructor, or model alias.
-- [ ] The shown config validates under the existing `Config` and model
+- [x] The shown config validates under the existing `Config` and model
   resolution contracts and reaches the existing Ollama adapter/default URL.
-- [ ] A focused REPL smoke scenario copies only the documented setup and first
+- [x] A focused REPL smoke scenario copies only the documented setup and first
   call and reaches a ready local Ollama model without additional config.
-- [ ] Advanced material still documents classpath resources, Aero tags,
+- [x] Advanced material still documents classpath resources, Aero tags,
   aliases, multiple providers, embedding defaults, and Integrant, but only
   after the minimal path.
-- [ ] No constructor, implicit default provider/model, cwd search, or fallback
+- [x] No constructor, implicit default provider/model, cwd search, or fallback
   behavior is added to library code.

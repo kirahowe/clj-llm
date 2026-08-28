@@ -1,24 +1,24 @@
 # Standardize the canonical conversation idiom
 
 - **ID:** ONB-008
-- **Status:** Open
+- **Status:** Resolved
 - **Priority:** P0 onboarding consistency
-- **Alpha disposition:** Must be completed before the next alpha documentation and examples are published
+- **Alpha disposition:** Completed for the next alpha documentation and examples
 
 ## Problem
 
-The repository teaches multiple equivalent ways to continue a conversation at
-the moment a new user needs one clear progression. Some snippets manually
-construct and append `{:role :user :content prompt}`; others put both
-`:llm/messages` and `:llm/prompt` in a request map. The smallest public idiom is
-already supported: keep the prompt as the positional argument and put prior
-history in the options map.
+At issue creation, the repository taught multiple equivalent ways to continue
+a conversation at the moment a new user needed one clear progression. Some
+snippets manually constructed and appended `{:role :user :content prompt}`;
+others put both `:llm/messages` and `:llm/prompt` in a request map. The
+smallest public idiom was already supported: keep the prompt as the positional
+argument and put prior history in the options map.
 
-This is a presentation inconsistency, not a missing chat abstraction. The
-library is intentionally stateless and the response's `:llm/messages` remains
+This was a presentation inconsistency, not a missing chat abstraction. The
+library is intentionally stateless, and the response's `:llm/messages` remains
 the conversation value passed to the next call.
 
-## Current evidence
+## Evidence at issue creation
 
 - `src/clj_llm/core.clj:237-249` documents `generate` as stateless and accepts a
   prompt string or request map; `:llm/prompt` is folded after existing
@@ -28,11 +28,45 @@ the conversation value passed to the next call.
 - `test/clj_llm/core_test.clj:154-168` proves that a prompt string plus
   `{:llm/messages history}` produces the same ordered request as the request-map
   form.
-- `README.md:62-71` currently teaches the request-map form for continuation.
-- `notebooks/conversations_and_streaming.clj:15-30` presents manual user-message
-  construction and the prompt form as alternatives.
-- `examples/chat/src/example/chat.clj:17-25` manually conjoins a user message
+- `README.md:62-71` taught the request-map form for continuation.
+- `notebooks/conversations_and_streaming.clj:15-30` presented manual
+  user-message construction and the prompt form as alternatives.
+- `examples/chat/src/example/chat.clj:17-25` manually conjoined a user message
   instead of using the positional prompt.
+
+## Implementation evidence — 2026-08-27
+
+- `README.md`, `notebooks/conversations_and_streaming.clj`, and
+  `examples/chat/src/example/chat.clj` now use a positional prompt with prior
+  `:llm/messages` in the opts map; continuation starts from the complete
+  response rather than manually appending a user message.
+- `notebooks/getting_started.clj` identifies positional prompts plus options as
+  the ordinary API and confines request-map construction to its advanced
+  imported-transcript example.
+- `test/clj_llm/core_test.clj` covers prompt-after-history ordering and reuse
+  of returned messages. Observed root CI completed 101 tests with 564
+  assertions.
+- The observed offline book render succeeded with invalid `OLLAMA_HOST` and
+  `OLLAMA_MODEL` values, exercising the revised conversation material without
+  provider access.
+
+## Final verification evidence — 2026-08-27
+
+- Root `bb ci` passed 101 tests and 564 assertions with zero failures or
+  errors. This includes the focused continuation case "positional prompts
+  append once and returned messages continue the history" and the focused
+  `streaming-callback-passthrough` coverage in `test/clj_llm/core_test.clj`.
+- The revised README and conversation material rendered successfully in the
+  offline book with deliberately invalid `OLLAMA_HOST` and `OLLAMA_MODEL`
+  values, confirming that documentation rendering does not require a provider.
+- The standalone chat example resolved its real resources, loaded, and exited
+  successfully when launched through `examples/run chat` from `/tmp`.
+- Request-map input remains supported for callers needing the advanced API;
+  its existing root behavioral coverage passed while ordinary examples use
+  positional prompts and immutable returned `:llm/messages` values. No mutable
+  chat, client, session, or separately maintained conversation object was
+  introduced.
+- Two sequential adversarial reviews completed with no findings.
 
 ## Design work
 
@@ -77,18 +111,18 @@ presentation.
 
 ## Acceptance criteria
 
-- [ ] The root README, getting-started/conversation material, and all ordinary
+- [x] The root README, getting-started/conversation material, and all ordinary
   examples use a positional prompt with an opts map for request options.
-- [ ] Every continuation example passes the prior response's complete
+- [x] Every continuation example passes the prior response's complete
   `:llm/messages` under opts and relies on `generate` to append the new prompt.
-- [ ] First-turn and continuation snippets use the same data flow and do not
+- [x] First-turn and continuation snippets use the same data flow and do not
   manually conjoin the next user message.
-- [ ] Manual message/request-map construction appears only in clearly labeled
+- [x] Manual message/request-map construction appears only in clearly labeled
   advanced material with a concrete need for role-level control.
-- [ ] Public request-map calls remain supported and their existing behavioral
+- [x] Public request-map calls remain supported and their existing behavioral
   coverage is retained.
-- [ ] Focused conversation coverage proves the positional prompt is appended
+- [x] Focused conversation coverage proves the positional prompt is appended
   after prior history exactly once and the returned messages can feed the next
   turn.
-- [ ] No chat/client/session abstraction or mutable conversation state is
+- [x] No chat/client/session abstraction or mutable conversation state is
   introduced.

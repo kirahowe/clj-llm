@@ -20,7 +20,7 @@ heading. The checkout examples resolve the library only because their
 `deps.edn` files use `{:local/root "../.."}`; that does not prove a released
 artifact can be resolved.
 
-## Current evidence
+## Evidence at issue creation
 
 - `README.md:12-16` advertises `com.kirahowe/clj-llm` version
   `0.1.0-alpha1` without naming a verified repository or release check.
@@ -33,6 +33,53 @@ artifact can be resolved.
   fail-fast deploy-token contract.
 - `examples/README.md:13-16` correctly labels `:local/root` as checkout-only,
   then links to the nonexistent root installation anchor.
+
+## Partial implementation and evidence — 2026-08-27
+
+The release path is prepared but the release is **not available**. This section
+supersedes the implementation-state observations above; it does not establish
+publication or consumer installability.
+
+Completed preparation:
+
+- The generated jar and POM were inspected. The jar contained the intended
+  Clojure source, the `resources/clj-llm/*.edn` resources, and Maven metadata
+  for `com.kirahowe/clj-llm` version `0.1.0-alpha1`. It excluded tests,
+  examples, notebooks, build source, editor/VCS files, and credentials. The POM
+  contained that coordinate and version, the runtime dependency set, SCM and
+  project URLs, description, and MIT license expected by the build. Its SCM tag
+  value is generated metadata only; no corresponding Git tag exists.
+- `deploy` now validates both required environment credentials before jar or
+  network work. It uses the `deps-deploy` 0.2.2 supported
+  `:repository {"clojars" {:username ... :password ...}}` credential fields.
+- Missing-credential preflight checks left the existing artifact unchanged and
+  performed no network work. A deliberately invalid-token deploy reached the
+  expected Clojars 401. Across those checks, the token canary was absent from
+  captured output, the Clojure error report and exception data, and repository
+  files. Failures were actionable, redacted, and did not retain the underlying
+  exception as a cause.
+- Public Clojars metadata for the coordinate still returned 404. Nothing has
+  been published or resolved from Clojars.
+- Neither `CLOJARS_USERNAME` nor `CLOJARS_PASSWORD` is available in the current
+  environment. The invalid-token 401 check did not authenticate or publish an
+  artifact.
+- There is no immutable release tag, and the current work is not pushed. The
+  previously tested `origin/main` SHA predates the API now documented in this
+  repository, so it was removed from installation guidance rather than being
+  presented as a reproducible fallback. The pinned Git-fallback acceptance
+  criterion is not met.
+
+The three remaining external blockers, in required order, are:
+
+1. **Immutable release identity:** after the final code is complete, create and
+   push the immutable release tag.
+2. **Publication:** supply real Clojars credentials, then deploy the inspected
+   jar and POM.
+3. **Consumer verification:** from a clean external Maven dependency context,
+   resolve the published coordinate and require `clj-llm.core`.
+
+Until all three blockers are cleared, this issue stays open and no Maven or Git
+installation path should be read as release availability.
 
 ## Design work
 
@@ -81,13 +128,13 @@ artifact can be resolved.
 
 ## Acceptance criteria
 
-- [ ] The generated jar and POM have been inspected, and release evidence lists
+- [x] The generated jar and POM have been inspected, and release evidence lists
   the expected coordinate/content plus the checked exclusions.
-- [ ] `build.clj/deploy` securely accepts and forwards a Clojars deploy token
+- [x] `build.clj/deploy` securely accepts and forwards a Clojars deploy token
   and username using the supported `deps-deploy` credential contract.
-- [ ] Invoking deploy without either required credential fails before build or
+- [x] Invoking deploy without either required credential fails before build or
   network work with an actionable message that contains no credential value.
-- [ ] A focused deploy-task check proves neither success nor failure output,
+- [x] A focused deploy-task check proves neither success nor failure output,
   exception data, generated files, nor repository changes contain the token.
 - [ ] The inspected jar and POM are deployed to Clojars under one immutable,
   documented alpha coordinate.
