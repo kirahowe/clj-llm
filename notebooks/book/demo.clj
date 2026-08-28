@@ -10,6 +10,7 @@
     #"(?i)sky.*blue" "Because air molecules scatter short (blue) wavelengths of sunlight more strongly than long ones (Rayleigh scattering)."
     #"(?i)prime number between" "127 is a prime between 100 and 200."
     #"(?i)why is it prime" "127 has no divisors other than 1 and itself; trial division up to its square root (≈11.3) finds none."
+    #"(?i)^what name did i give you\?$" "You asked me to call you Rowan."
     #"(?i)story" "Once upon a time, a parenthesis opened. Everything since is still in scope."
     #"(?i)mitochondria" "The mitochondria converts nutrients into ATP, powering the cell."
     #"(?i)reset.*password" "Click \"Forgot password\" on the sign-in page and we'll email you a reset link."

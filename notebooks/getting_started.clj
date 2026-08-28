@@ -5,20 +5,116 @@
 ^{:kindly/hide-code true}
 (ns getting-started
   (:require [clj-llm.core :as llm]
-            [book.demo :as demo]))
+            [book.demo :as demo]
+            [clojure.java.io :as io]))
 
-;; ## Configuration
+^{:kindly/hide-code true}
+(def config demo/config)
 
-;; clj-llm reads configuration from an EDN file, usually named `llm.edn`. It uses [aero](https://github.com/juxt/aero), so environment-specific values can come from `#env` or `#profile`, and fallback values from `#or`.
+;; ## The smallest useful configuration
+
+;; Start with one local Ollama provider and one explicit default model. The
+;; `:ollama` entry registers a provider, and `:llm/adapter :ollama` selects
+;; Ollama's native API. The `"ollama/llama3.2"` default explicitly pairs that
+;; provider with the model id, so ordinary calls do not need to select either.
+
+;; Before the first call, pull the model, confirm that the Ollama server lists
+;; it, and verify the HTTP endpoint:
+;;
+;; ```shell
+;; ollama pull llama3.2
+;; ollama list
+;; curl -fsS http://localhost:11434/api/version
+;; ```
+;;
+;; `ollama list` proves that the Ollama instance reached by the CLI advertises
+;; the model as installed. The version endpoint proves that the HTTP API at the
+;; default URL is reachable and reports its server version. At call time an
+;; unreachable server throws `ex-info` with `:type :llm/network-error`; an
+;; Ollama response with a failing status throws `:type :llm/http-error` plus
+;; `:status` and `:body`. A model-related failure can reflect the model name,
+;; the server being contacted, or other provider details, so inspect the actual
+;; status and body rather than assuming one cause.
+
+;; ## The first call
+
+;; Pass the config and a prompt string to `generate`. Its return value is the
+;; complete response map:
+
+;; ```clojure
+;; (def config
+;;   #:llm{:providers {:ollama {:llm/adapter :ollama}}
+;;         :defaults #:llm{:model "ollama/llama3.2"}})
+;;
+;; (llm/generate config "What is the capital of France?")
+;; ```
+
+^{:kindly/hide-code true}
+(llm/generate config "What is the capital of France?")
+
+;; The most useful response keys are:
+
+;; - `:llm/text`: the reply as a string.
+;; - `:llm/messages`: the conversation including the reply. Pass these messages into another call to continue it.
+;; - `:llm/usage`: `{:input-tokens n :output-tokens n}`; with tool use, summed over all rounds.
+;; - `:llm/finish-reason`: commonly `:stop`, `:length`, `:tool-calls`, or `:refusal`. Providers may return other values.
+;; - `:llm/request`, `:llm/latency-ms`, `:llm/started-at`, `:llm/op`: a record of what was called and how long it took. Tool functions are omitted from the stored request; add them again before replaying a tool-using request.
+;; - `:llm/raw`: the provider's parsed wire response, when you need something the normalized keys don't carry.
+
+;; ## Per-call options
+
+;; Keep the prompt positional and put request options in the third argument:
+
+(llm/generate config
+              "Why is the sky blue?"
+              #:llm{:system "You are terse."
+                    :max-tokens 200
+                    :temperature 0.2})
+
+;; A `"provider/model-id"` string selects a different model for one call. The
+;; complete response records the resolved selection under `:llm/model`:
+
+;; ```clojure
+;; (llm/generate config "What is 17 * 23?"
+;;               {:llm/model "ollama/qwen3:8b"})
+;; ```
+
+;; ## Growing the configuration
+
+;; Once the inline map works, load the bundled example from a fixed classpath
+;; resource:
+
+(def resource-config
+  "Configuration loaded from the bundled classpath example."
+  (llm/read-config
+   (io/resource "clj-llm/config.example.edn")))
+
+;; ```clojure
+;; (llm/generate resource-config "Summarize this paragraph.")
+;; ```
+
+;; `io/resource` from `clojure.java.io` resolves the fixed name from the
+;; classpath instead of the process working directory. `read-config` returns
+;; the same map shape as the inline configuration.
+;;
+;; For application-owned configuration, copy the example to `llm.edn` and grow
+;; it with [aero](https://github.com/juxt/aero). Values can come from `#env`,
+;; `#profile`, `#or`, `#include`, and `#ref`. This larger example preserves
+;; application-facing aliases and an embedding default while adding a second
+;; provider:
 
 ;; ```clojure
 ;; #:llm{:providers
 ;;       {:ollama {:llm/adapter :ollama
 ;;                 :base-url #or [#env OLLAMA_HOST
-;;                                "http://localhost:11434"]}}
+;;                                "http://localhost:11434"]}
+;;        :anthropic {:llm/adapter :anthropic
+;;                    :api-key #env ANTHROPIC_API_KEY}}
 ;;       :models
 ;;       {:default    #:llm{:provider :ollama :model "llama3.2"}
 ;;        :fast       #:llm{:provider :ollama :model "qwen3:8b"}
+;;        :careful    #:llm{:provider :anthropic
+;;                          :model "claude-sonnet-4-6"}
 ;;        :embeddings #:llm{:provider :ollama :model "nomic-embed-text"}}
 ;;       :defaults
 ;;       #:llm{:model :default
@@ -26,9 +122,39 @@
 ;;             :max-tokens #profile {:dev 1024 :default 4096}}}
 ;; ```
 
-;; A provider is an account or endpoint. Here it is an Ollama server, and `:llm/adapter :ollama` tells clj-llm to use Ollama's native API.
+;; A provider is an account or endpoint. Model aliases such as `:default` and
+;; `:fast` keep model ids out of application code. Unqualified provider
+;; settings such as `:base-url` and `:api-key` are passed to the adapter. Keys
+;; under `:llm/...`, including `:llm/adapter` and optional
+;; `:llm/capabilities`, belong to clj-llm.
 
-;; Model aliases such as `:default` and `:fast` keep model ids out of application code. Changing an alias in config changes the model without changing a call site. Unqualified provider settings such as `:base-url` are passed to the adapter. Keys under `:llm/...`, including `:llm/adapter` and optional `:llm/capabilities`, belong to clj-llm.
+;; Load the file directly, optionally selecting an Aero profile:
+
+;; ```clojure
+;; (def config (llm/read-config "llm.edn"))
+;; (def dev-config (llm/read-config "llm.edn" {:profile :dev}))
+;;
+;; (llm/generate config "Summarize this paragraph." {:llm/model :fast})
+;; ```
+
+;; `read-config` returns the same map shape as the inline configuration. In an
+;; Integrant application, require `clj-llm.integrant` to register
+;; `:clj-llm/config`, then compose it with the keys that consume it:
+
+;; ```clojure
+;; (require '[clj-llm.integrant]
+;;          '[integrant.core :as ig])
+;;
+;; (def system
+;;   (ig/init
+;;    {:clj-llm/config {:path "llm.edn" :profile :prod}
+;;     :my.app/handler {:llm (ig/ref :clj-llm/config)}}))
+;; ```
+
+;; The consuming key's `ig/init-key` method receives the initialized clj-llm
+;; config under `:llm`. Halting the system stops provider lifecycle resources.
+
+;; ### Trusted destinations
 
 ;; > **Security:** Provider maps, `:base-url`, `:headers`, credentials, and `:endpoint-policy` are trusted application configuration. Never derive them from an HTTP request, tenant record, upload, or other untrusted input: built-in adapters send prompts and credentials to the configured destination.
 ;;
@@ -47,51 +173,18 @@
 ;;
 ;; This hook does not resolve or pin a hostname to the checked address. It therefore cannot safely enforce IP/network ranges against DNS rebinding. Use network egress controls or a custom transport/provider that pins the checked address when stronger guarantees are required.
 
-;; Load a config file with `llm/read-config` (aero options such as `:profile` pass through):
+;; ## Advanced request maps
 
-;; ```clojure
-;; (def config (llm/read-config "llm.edn"))
-;; (def config (llm/read-config "llm.edn" {:profile :dev}))
-;; ```
+;; Positional prompts plus options are the ordinary API. Use a request map when
+;; the application already has role-level messages and must preserve them
+;; exactly—for example, when importing an existing transcript containing an
+;; assistant turn:
 
-;; `read-config` returns a map. You can also build that map yourself or provide it through Integrant.
-
-^{:kindly/hide-code true}
-(def config demo/config)
-
-;; ## The first call
-
-;; Pass a prompt string to `generate` and it returns a response map:
-
-(llm/generate config "What is the capital of France?")
-
-;; The most useful response keys are:
-
-;; - `:llm/text`: the reply as a string.
-;; - `:llm/messages`: the conversation including the reply. Pass these messages into another call to continue it.
-;; - `:llm/usage`: `{:input-tokens n :output-tokens n}`; with tool use, summed over all rounds.
-;; - `:llm/finish-reason`: commonly `:stop`, `:length`, `:tool-calls`, or `:refusal`. Providers may return other values.
-;; - `:llm/request`, `:llm/latency-ms`, `:llm/started-at`, `:llm/op`: a record of what was called and how long it took. Tool functions are omitted from the stored request; add them again before replaying a tool-using request.
-;; - `:llm/raw`: the provider's parsed wire response, when you need something the normalized keys don't carry.
-
-;; ## Requests beyond a string
-
-;; Use a request map when you need more than a prompt. `:llm/prompt` adds a user message, while `:llm/system`, `:llm/max-tokens`, and `:llm/temperature` control the request. The namespaced-map form `#:llm{...}` is shorthand for keys such as `:llm/prompt`:
-
-(llm/generate config #:llm{:system "You are terse."
-                           :prompt "Why is the sky blue?"
-                           :max-tokens 200
-                           :temperature 0.2})
-
-;; The optional third argument is merged into the request. It is useful for changing one setting at a call site:
-
-(llm/generate config "What is 17 * 23?" {:llm/model :fast})
-
-;; Select a model with a config alias, a `"provider/model-id"` string, or an explicit provider/model map:
-
-(:llm/model (llm/generate config "hi" {:llm/model "ollama/qwen3:8b"}))
-
-(:llm/model (llm/generate config "hi" {:llm/model #:llm{:provider :ollama :model "gemma3:4b"}}))
+(llm/generate
+ config
+ {:llm/messages [{:role :user :content "Call me Rowan."}
+                 {:role :assistant :content "Hello, Rowan."}
+                 {:role :user :content "What name did I give you?"}]})
 
 ;; ## Structured responses
 
@@ -114,9 +207,14 @@
 
 ;; ## Embeddings
 
-;; `embed` takes a string or a sequence of strings, using the `:llm/embedding-model` alias from defaults (override per call with `:llm/model`):
+;; The minimal inline config has no embedding default, so select the model in
+;; opts. The later file-backed config's `:llm/embedding-model` default lets
+;; applications omit this option:
 
-(llm/embed config "a sentence to embed")
+;; ```clojure
+;; (llm/embed config "a sentence to embed"
+;;            {:llm/model "ollama/nomic-embed-text"})
+;; ```
 
 ;; With a single string you get `:llm/embedding` (one vector) for convenience alongside `:llm/embeddings`.
 
@@ -125,7 +223,8 @@
 ;; Invalid config, requests, and eval suites throw `ex-info` with a readable `:explain` value. Their [malli](https://github.com/metosin/malli) schemas are in `clj-llm.spec`:
 
 (try
-  (llm/generate config {:llm/messages "not a vector of messages"})
+  (llm/generate config "Use an invalid temperature."
+                {:llm/temperature "hot"})
   (catch Exception e
     {:type (:type (ex-data e))
      :explain (:explain (ex-data e))}))

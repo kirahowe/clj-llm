@@ -161,11 +161,27 @@
         (llm/generate config {:llm/messages history :llm/prompt "next"})
         (is (= expected (:llm/messages (first @requests))))))
 
-    (testing "a prompt string plus opts :llm/messages appends the same way"
+    (testing "positional prompts append once and returned messages continue the history"
       (let [requests (atom [])
-            config (scripted-config [(text-response "43")] :requests requests)]
-        (llm/generate config "next" {:llm/messages history})
-        (is (= expected (:llm/messages (first @requests))))))))
+            config (scripted-config [(text-response "43")
+                                     (text-response "44")]
+                                    :requests requests)
+            first-response (llm/generate config "next"
+                                         {:llm/messages history})
+            first-messages (conj expected
+                                 {:role :assistant :content "43"})
+            second-response (llm/generate
+                             config
+                             "again"
+                             {:llm/messages (:llm/messages first-response)})
+            second-request-messages (conj first-messages
+                                          {:role :user :content "again"})
+            second-messages (conj second-request-messages
+                                  {:role :assistant :content "44"})]
+        (is (= [expected second-request-messages]
+               (mapv :llm/messages @requests)))
+        (is (= first-messages (:llm/messages first-response)))
+        (is (= second-messages (:llm/messages second-response)))))))
 
 (def weather-tool-call
   {:id "call_1" :name "get-weather" :arguments {:city "Berlin"}})
@@ -444,9 +460,14 @@
         chunks (atom [])
         response (llm/generate config "story"
                                {:llm/on-chunk #(swap! chunks conj %)})]
-    (is (= ["Once" " upon" " a time"] (map :text @chunks)))
-    (is (every? #(= :text (:type %)) @chunks))
-    (is (= "Once upon a time" (:llm/text response)))))
+    (is (= [{:type :text :text "Once"}
+            {:type :text :text " upon"}
+            {:type :text :text " a time"}]
+           @chunks))
+    (is (= {:llm/text "Once upon a time"
+            :llm/messages [{:role :user :content "story"}
+                           {:role :assistant :content "Once upon a time"}]}
+           (select-keys response [:llm/text :llm/messages])))))
 
 (deftest structured-responses
   (testing "objects are recursively keywordized"

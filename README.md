@@ -7,26 +7,59 @@ Inspired by [RubyLLM](https://rubyllm.com/), built around Clojure data and funct
 > [!NOTE]
 > clj-llm is currently an alpha. The public API may still change before `0.1.0`.
 
+## Installation
+
+This alpha currently has no published or tagged immutable consumer coordinate.
+The current checkout and the `:local/root` dependencies in the [examples](examples/)
+are for repository evaluation only. Consumer installation guidance will become
+available after a release tag and a clean Clojars round trip.
+
 ## Get a response in a few minutes
 
-Add clj-llm to `deps.edn`:
+Install [Ollama](https://ollama.com/), then pull the model and verify both the
+model inventory and the local service:
 
-```clojure
-{:deps {com.kirahowe/clj-llm {:mvn/version "0.1.0-alpha1"}}}
+```sh
+ollama pull llama3.2
+ollama list
+curl -fsS http://localhost:11434/api/version
 ```
 
-Create `llm.edn`:
+Because no consumer coordinate is available yet, evaluate the library directly
+from the current repository checkout. From any starting directory, replace the
+path below with the checkout's absolute path:
+
+```sh
+cd /absolute/path/to/clj-llm
+clojure
+```
+
+This is a repository evaluation command, not consumer installation. Changing
+directories makes Clojure select the checkout's `deps.edn`, which puts the
+project on its classpath. At the REPL, use this minimal inline configuration for
+a first working call:
 
 ```clojure
-#:llm{:providers
-      {:ollama {:llm/adapter :ollama
-                :base-url #or [#env OLLAMA_HOST
-                               "http://localhost:11434"]}}
-      :models
-      {:default #:llm{:provider :ollama
-                      :model #or [#env OLLAMA_MODEL "llama3.2"]}}
-      :defaults #:llm{:model :default}}
+(require '[clj-llm.core :as llm])
+
+(def config
+  #:llm{:providers {:ollama {:llm/adapter :ollama}}
+        :defaults #:llm{:model "ollama/llama3.2"}})
+
+(-> (llm/generate config "Why is the sky blue?")
+    :llm/text)
+;; => "Sunlight is scattered by gases in the atmosphere..."
 ```
+
+The inline map performs no cwd-dependent config-file lookup. That independence
+applies to configuration, not code loading: Clojure still needs the checkout
+project on its classpath, as ensured by the launch command above.
+
+Configuration has two layers. `:llm/providers` names available endpoints;
+here the provider name is `:ollama`, and `:llm/adapter :ollama` selects the
+native Ollama protocol and its default local URL. `:llm/defaults` supplies
+request defaults; the model string `ollama/llama3.2` routes to the `ollama`
+provider and asks it for the `llama3.2` model.
 
 > [!WARNING]
 > Provider maps, base URLs, headers, credentials, and endpoint policies are
@@ -38,48 +71,53 @@ Create `llm.edn`:
 > when those guarantees are required. Explicit local HTTP remains supported for
 > Ollama and compatible development servers.
 
-Install [Ollama](https://ollama.com/), pull the model, then start a REPL:
+`generate` returns the full normalized response map, including the text,
+conversation messages, model, provider, token use, finish reason, latency,
+normalized request, and original provider response.
 
-```sh
-ollama pull llama3.2
-clojure
-```
+### Ollama diagnostics
 
-```clojure
-(require '[clj-llm.core :as llm])
+Failures are `ExceptionInfo` values with a typed `ex-data` map:
 
-(def config (llm/read-config "llm.edn"))
-
-(-> (llm/generate config "Why is the sky blue?")
-    :llm/text)
-;; => "Sunlight is scattered by gases in the atmosphere..."
-```
-
-`generate` returns a map containing the text, conversation, model, provider, token use, finish reason, latency, normalized request, and original provider response.
+| Type | Inspect | Operator action |
+|---|---|---|
+| `:llm/network-error` | `(ex-data e)` includes `:type` and `:url`; `(ex-cause e)` retains the underlying connection, DNS, or socket exception. | Run the version `curl` above. Start or restart Ollama, then correct the configured host, port, or network path if the URL is not reachable. |
+| `:llm/http-error` | `(ex-data e)` includes the provider's `:status`, decoded `:body`, and `:url`. | Read the actual status and body, run `ollama list`, pull the configured model if absent, and confirm that the provider/model names match. Exact missing-model responses can vary by Ollama version. |
 
 ## Common tasks
 
-Continue a conversation:
+Continue a conversation by passing the prior messages in the options map while
+keeping the new prompt as the second positional argument:
 
 ```clojure
 (def first-answer
   (llm/generate config "Name a prime number between 100 and 200."))
 
 (llm/generate config
-              {:llm/messages (:llm/messages first-answer)
-               :llm/prompt "Why is it prime?"})
+              "Why is it prime?"
+              {:llm/messages (:llm/messages first-answer)})
 ```
 
 Stream text as it arrives:
 
 ```clojure
-(llm/generate config "Tell me a short story."
-              {:llm/on-chunk
-               (fn [{:keys [type text]}]
-                 (when (= :text type)
-                   (print text)
-                   (flush)))})
+(defn print-chunk [{:keys [type text]}]
+  (when (= :text type)
+    (print text)
+    (flush)))
+
+(def streaming-response
+  (llm/generate config
+                "Tell me a short story."
+                {:llm/on-chunk print-chunk}))
+
+streaming-response
+;; => #:llm{:text "..." :messages [...] ...}
 ```
+
+The callback receives typed event maps and deliberately prints only `:text`
+events. Streaming does not replace the normal result: `streaming-response` is
+the complete `generate` return, including `:llm/text` and `:llm/messages`.
 
 Ask for a structured response:
 
@@ -121,10 +159,16 @@ runtime validator, and `:llm/max-tool-calls` for an application-specific total.
 Rejected calls stay local under `:llm/tool-rejections`; omit `:fn` when a human
 or application workflow should inspect and approve calls manually.
 
-Create embeddings with a configured `:llm/embedding-model`:
+Create embeddings by selecting an embedding-capable model explicitly. Pull it
+once before the first call:
+
+```sh
+ollama pull nomic-embed-text
+```
 
 ```clojure
-(llm/embed config "some text")
+(llm/embed config "some text"
+           {:llm/model "ollama/nomic-embed-text"})
 ;; => #:llm{:embedding [0.01 ...] ...}
 ```
 
@@ -139,7 +183,7 @@ Run cases against different models, prompts, or settings:
    #:llm{:cases [#:llm{:id :capital
                        :input "What is the capital of France?"
                        :expected "Paris"}]
-         :variants [#:llm{:id :default :model :default}]
+         :variants [#:llm{:id :default :model "ollama/llama3.2"}]
          :scorers [:includes]}))
 
 (eval/print-summary report)
