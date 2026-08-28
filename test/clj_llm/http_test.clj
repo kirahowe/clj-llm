@@ -9,7 +9,7 @@
             [clj-llm.providers.openai])
   (:import (com.sun.net.httpserver HttpExchange HttpHandler HttpServer)
            (java.io IOException)
-           (java.net InetSocketAddress)
+           (java.net ConnectException InetSocketAddress)
            (java.net.http HttpTimeoutException)
            (java.nio.charset StandardCharsets)))
 
@@ -253,6 +253,26 @@
            #(http/post-json
              (request "/body" {:endpoint-policy :not-a-function}))))))
   (is (zero? @requests-seen)))
+
+(deftest network-error-messages-include-actionable-reasons
+  (let [network-error! (ns-resolve 'clj-llm.http 'network-error!)
+        url "http://127.0.0.1:1/v1"]
+    (testing "blank cause messages use the cause class"
+      (doseq [cause [(ConnectException.) (ConnectException. "   ")]]
+        (let [exception (response-limit #(network-error! url cause))]
+          (is (= (str "Network error calling " url ": ConnectException")
+                 (ex-message exception)))
+          (is (= {:type :llm/network-error :url url}
+                 (ex-data exception)))
+          (is (identical? cause (ex-cause exception))))))
+    (testing "nonblank cause messages remain readable"
+      (let [cause (ConnectException. "Connection refused")
+            exception (response-limit #(network-error! url cause))]
+        (is (= (str "Network error calling " url ": Connection refused")
+               (ex-message exception)))
+        (is (= {:type :llm/network-error :url url}
+               (ex-data exception)))
+        (is (identical? cause (ex-cause exception)))))))
 
 (deftest non-streaming-timeout-covers-body-consumption
   (let [exception

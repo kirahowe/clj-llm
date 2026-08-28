@@ -43,5 +43,5 @@
   install {:doc "Build and install the jar into the local Maven repository"
            :task (clojure "-T:build install")}
 
-  deploy {:doc "Deploy to Clojars (requires CLOJARS_USERNAME/CLOJARS_PASSWORD)"
+  deploy {:doc "Deploy to Clojars; CLOJARS_USERNAME is the user and CLOJARS_PASSWORD is the deploy token"
           :task (clojure "-T:build deploy")}}}

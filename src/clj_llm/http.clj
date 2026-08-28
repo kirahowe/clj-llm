@@ -215,9 +215,13 @@
                          extra))))
 
 (defn- network-error! [url e]
-  (throw (ex-info (str "Network error calling " url ": " (ex-message e))
-                  {:type :llm/network-error :url url}
-                  e)))
+  (let [message (ex-message e)
+        reason (if (str/blank? message)
+                 (.getSimpleName (class e))
+                 message)]
+    (throw (ex-info (str "Network error calling " url ": " reason)
+                    {:type :llm/network-error :url url}
+                    e))))
 
 (defn- request-timeout-exception [url timeout-ms]
   (HttpTimeoutException.

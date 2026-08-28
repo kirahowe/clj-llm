@@ -1,6 +1,7 @@
 (ns build
   "Build tasks. Run with: clojure -T:build <task>"
-  (:require [clojure.tools.build.api :as b]
+  (:require [clojure.string :as str]
+            [clojure.tools.build.api :as b]
             [deps-deploy.deps-deploy :as dd]))
 
 (def lib 'com.kirahowe/clj-llm)
@@ -8,6 +9,20 @@
 (def class-dir "target/classes")
 (def basis (delay (b/create-basis {:project "deps.edn"})))
 (def jar-file (format "target/%s-%s.jar" (name lib) version))
+
+(defn- required-env [env-var guidance]
+  (let [value (System/getenv env-var)]
+    (when (str/blank? value)
+      (throw (ex-info guidance
+                      {:type ::missing-deploy-credential
+                       :environment-variable env-var})))
+    value))
+
+(defn- deployment-detail [exception deploy-token]
+  (let [detail (ex-message exception)]
+    (if (str/blank? detail)
+      "No additional details were provided."
+      (str/replace detail deploy-token "[REDACTED]"))))
 
 (defn clean [_]
   (b/delete {:path "target"}))
@@ -42,7 +57,23 @@
               :class-dir class-dir}))
 
 (defn deploy [_]
-  (jar nil)
-  (dd/deploy {:installer :remote
-              :artifact (b/resolve-path jar-file)
-              :pom-file (b/pom-path {:lib lib :class-dir class-dir})}))
+  (let [username (required-env
+                  "CLOJARS_USERNAME"
+                  "Set CLOJARS_USERNAME to a nonblank Clojars username before deploying.")
+        deploy-token (required-env
+                      "CLOJARS_PASSWORD"
+                      "Set CLOJARS_PASSWORD to a nonblank Clojars deploy token before deploying.")]
+    (jar nil)
+    (try
+      (dd/deploy {:installer :remote
+                  :artifact (b/resolve-path jar-file)
+                  :pom-file (b/pom-path {:lib lib :class-dir class-dir})
+                  :repository {"clojars" {:url "https://clojars.org/repo"
+                                          :username username
+                                          :password deploy-token}}})
+      (catch Exception exception
+        (let [detail (deployment-detail exception deploy-token)]
+          (throw (ex-info (str "Clojars deployment failed: " detail)
+                          {:type ::deployment-failed
+                           :exception-class (.getName (class exception))
+                           :detail detail})))))))
