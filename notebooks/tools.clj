@@ -8,11 +8,11 @@
 ^{:kindly/hide-code true}
 (def config demo/config)
 
-;; ## Tools are maps; the loop is automatic
+;; ## Let the library run the loop
 
-;; A tool is a map with a `:name`, a `:description`, and a JSON Schema under `:parameters`. Add a `:fn` if you want clj-llm to run it. When every requested tool has a matching function, clj-llm calls those functions with keywordized arguments, adds their results to the conversation, and asks the model to continue. The loop stops when the model answers, reaches `:llm/max-tool-rounds`, or exhausts `:llm/max-tool-calls`. Both limits default to 10; rounds bound provider continuations while calls bound the total number of function invocations across all rounds.
+;; A tool is a map with a `:name`, `:description`, and JSON Schema under `:parameters`. Add a `:fn` when you want clj-llm to run it. The library calls the function with keywordized arguments, adds its result to the conversation, and asks the model to continue. You get one final response containing the whole exchange.
 
-;; Tool calls and arguments are untrusted, model-controlled provider output. The JSON Schema under `:parameters` guides the model; it is not runtime validation or authorization.
+;; The loop stops when the model answers, reaches `:llm/max-tool-rounds`, or exhausts `:llm/max-tool-calls`. Both limits default to 10. Rounds bound provider continuations; calls bound the total number of function invocations across all rounds.
 
 (def weather-tool
   {:name "get-weather"
@@ -24,15 +24,7 @@
          {:city city :temperature-c 21 :sky "clear"})})
 
 (def r (llm/generate config "What's the weather in Berlin?"
-                     {:llm/tools [weather-tool]
-                      :llm/max-tool-calls 4
-                      :llm/tool-policy
-                      (fn [tool-call tool]
-                        (and (= "get-weather" (:name tool-call))
-                             (= "get-weather" (:name tool))))
-                      :llm/tool-argument-validator
-                      (fn [arguments _tool]
-                        (string? (:city arguments)))}))
+                     {:llm/tools [weather-tool]}))
 
 (:llm/text r)
 
@@ -48,17 +40,33 @@
 
 ;; Usage accounting sums over all rounds, so `:llm/usage` on the final response reflects the whole loop, and `:llm/latency-ms` is wall-clock for everything.
 
-;; ## Preflight controls for automatic execution
+;; ## Validate before anything runs
+
+;; Tool calls and arguments are untrusted model output. The JSON Schema under `:parameters` helps the model produce the right arguments, but it is not runtime validation or authorization.
 
 ;; `:llm/tool-policy` is an optional `(fn [tool-call tool-metadata])`. `tool-call` is the normalized provider call (`{:id :name :arguments}`); `tool-metadata` is its matching tool definition with executable `:fn` removed. Return truthy to approve that invocation and false/nil to reject it.
 
 ;; `:llm/tool-argument-validator` is an optional `(fn [arguments tool-metadata])` with the same truthy/false contract. Supply a real validator appropriate to your application here if desired. clj-llm deliberately does not implement a partial JSON Schema validator.
 
+(def guarded-response
+  (llm/generate config "What's the weather in Berlin?"
+                {:llm/tools [weather-tool]
+                 :llm/max-tool-calls 4
+                 :llm/tool-policy
+                 (fn [tool-call tool]
+                   (and (= "get-weather" (:name tool-call))
+                        (= "get-weather" (:name tool))))
+                 :llm/tool-argument-validator
+                 (fn [arguments _tool]
+                   (string? (:city arguments)))}))
+
+(:llm/text guarded-response)
+
 ;; Every provider-returned batch is preflighted before any `:fn` runs. An unknown tool, policy rejection or exception, validator rejection or exception, or a batch larger than the remaining `:llm/max-tool-calls` budget rejects automatic execution for the whole batch. A later oversized batch therefore cannot partially consume its remaining budget. Set the call budget to 0 to disable automatic execution while retaining structured rejection reporting.
 
 ;; Rejected calls remain under `:llm/tool-calls` and local rejection records appear under `:llm/tool-rejections`. Each record contains `{:tool-call call :reason keyword}` plus local `:message` data for a policy/validator exception or `:budget` data for a budget rejection. These records and hook functions are never sent to the provider or included in the replayable `:llm/request`; exception messages remain local. Actual exceptions thrown by an approved tool function keep the existing behavior: the provider receives only `Error executing tool <name>`.
 
-;; ## Taking the loop into your own hands
+;; ## Handle calls yourself
 
 ;; Omit `:fn` to approve and handle calls yourself. The response uses `:llm/finish-reason :tool-calls` and puts pending calls under `:llm/tool-calls`. Manual handling is appropriate when execution needs human approval or application-specific validation, authorization, idempotency, queueing, or budget controls:
 

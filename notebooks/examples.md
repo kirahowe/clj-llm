@@ -1,33 +1,29 @@
 # Examples
 
-These three programs use the same `llm/generate` call in a command-line tool, a
-terminal chat, and a web handler. Each one is a standalone project under
-[`examples/`](https://github.com/kirahowe/clj-llm/tree/main/examples).
+Want to see the library in a real program instead of another isolated snippet?
+This repository includes a command-line prompt, a terminal chat, and a small
+Ring handler. They are deliberately plain. Each one shows the minimum code for
+its job and uses the same `llm/generate` function.
 
-They use [Ollama](https://ollama.com/) so you can run them without an API key.
-Install Ollama, then pull the model and verify both the model inventory and the
-local service:
+All three use [Ollama](https://ollama.com/), so you can run them without an API
+key. Install Ollama and pull the model once:
 
 ```sh
 ollama pull llama3.2
-ollama list
-curl -fsS http://localhost:11434/api/version
 ```
 
-Clone the repository, then use its launcher from any working directory:
+Then clone the repository and run whichever example you want:
 
 ```sh
 git clone https://github.com/kirahowe/clj-llm.git
-/absolute/path/to/clj-llm/examples/run ask "Why is the sky blue?"
-/absolute/path/to/clj-llm/examples/run chat
-/absolute/path/to/clj-llm/examples/run prompt-server
+cd clj-llm
+./examples/run ask "Why is the sky blue?"
+./examples/run chat
+./examples/run prompt-server
 ```
 
-From the repository root, the same commands begin with `./examples/run`. The
-launcher resolves its own directory and changes internally only to select the
-chosen standalone project's `deps.edn`. The ask configuration stays inline;
-the chat and server configurations stay on their project classpaths. None of
-those config lookups depends on the caller's working directory.
+Each example is a standalone Clojure project. The small `examples/run` launcher
+chooses the right `deps.edn` for you.
 
 ## Ask from the command line
 
@@ -59,17 +55,16 @@ prints the answer. Its reusable `ask` function accepts configuration explicitly;
     (println (ask config prompt))))
 ```
 
-Run it with either input form from any working directory:
+Run it with command-line arguments or pipe a prompt over standard input:
 
 ```sh
-/absolute/path/to/clj-llm/examples/run ask "Why is the sky blue?"
-echo "Explain immutable data" | /absolute/path/to/clj-llm/examples/run ask
+./examples/run ask "Why is the sky blue?"
+echo "Explain immutable data" | ./examples/run ask
 ```
 
-The launcher changes internally into `examples/ask` only to select its
-`deps.edn`; the namespace's immutable configuration remains inline.
-
-The `ask` function also works at the REPL when you supply its configuration:
+The useful part is not `-main`; it is the two-line `ask` function. It accepts
+configuration explicitly, so it is just as easy to use from a REPL or another
+namespace:
 
 ```clojure
 (require '[example.ask :as ask])
@@ -132,19 +127,16 @@ with a named streaming callback, while each new prompt remains positional:
             (recur (:llm/messages response))))))))
 ```
 
-Run it from any working directory and type at the `you>` prompt. Enter `:quit`
-or press `Ctrl-D` to stop:
+Run it and type at the `you>` prompt. Enter `:quit` or press `Ctrl-D` to stop:
 
 ```sh
-/absolute/path/to/clj-llm/examples/run chat
+./examples/run chat
 ```
 
-The launcher changes internally into `examples/chat` to select its `deps.edn`,
-which places `resources/example/chat/llm.edn` on the classpath. The startup
-lookup is a classpath resource lookup, not a filesystem search relative to the
-caller or launcher working directory. Requiring the namespace performs no config
-I/O. `print-chunk` handles only typed `:text` events; streaming still returns
-the complete response whose `:llm/messages` become the next turn's history.
+The config lives at `resources/example/chat/llm.edn` and is loaded once when the
+program starts. Requiring the namespace does not read config or make a network
+call. `print-chunk` handles only typed `:text` events; streaming still returns
+the complete response, and its `:llm/messages` become the next turn's history.
 
 [View the complete terminal chat project.](https://github.com/kirahowe/clj-llm/tree/main/examples/chat)
 
@@ -205,18 +197,11 @@ once before starting Jetty:
                      {:host "127.0.0.1" :port 3000})))
 ```
 
-Start the standalone server from any working directory:
+Start the server:
 
 ```sh
-/absolute/path/to/clj-llm/examples/run prompt-server
+./examples/run prompt-server
 ```
-
-The launcher changes internally into `examples/prompt-server` to select its
-`deps.edn` and place `resources/example/prompt-server/llm.edn` on the
-classpath. `-main` resolves and reads that startup resource before opening a
-port; config loading is not relative to the caller or launcher working directory.
-Requiring the namespace performs no config I/O, and `handler` itself receives
-configuration explicitly.
 
 Then call it from another terminal:
 
@@ -225,18 +210,23 @@ curl --data 'Give me one sentence about immutable data.' \
   http://127.0.0.1:3000/generate
 ```
 
-This example is hard-coded to loopback and is not a production service or
-deployment template. Its body limit does not replace authentication,
-authorization, rate and cost controls, bounded concurrency, end-to-end
-deadlines, safe logging and secret handling, or deployment hardening. A reverse
-proxy alone does not make the handler safe to expose.
+This is a local example, not a deployment template. It binds to loopback and
+limits prompt bodies to 64 KiB. A public LLM endpoint also needs authentication,
+authorization, rate and cost controls, bounded concurrency, deadlines, safe
+logging, secret handling, and the usual deployment hardening.
 
 [View the complete HTTP server project.](https://github.com/kirahowe/clj-llm/tree/main/examples/prompt-server)
 
-## Evaluate the repository checkout
+## Use these in your own project
 
-The checked-in examples use `{:local/root "../.."}` so they run against the
-current checkout. They are for repository evaluation only. This alpha currently
-has no published or tagged immutable consumer coordinate; consumer installation
-guidance will become available after a release tag and a clean Clojars round
-trip.
+The checked-in examples use `{:local/root "../.."}` on purpose, so they always
+run against the source beside them. In an application, replace that with the
+released coordinate:
+
+```clojure
+com.kirahowe/clj-llm {:mvn/version "0.1.0-alpha1"}
+```
+
+From there, take the useful function and leave the demo scaffolding behind. The
+examples are small enough that you should not need to adopt an application
+structure just to borrow one idea.

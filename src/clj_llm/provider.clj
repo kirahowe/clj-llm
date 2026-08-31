@@ -33,7 +33,7 @@
           :max-tokens  4096                  optional
           :temperature 0.7                   optional
           :tools       [{:name \"...\" :description \"...\"
-                         :parameters {...json schema...} :fn (fn [args] ...)}]
+                         :parameters {...json schema...}}]
           :response-format {:type :json-schema :name \"name\"
                             :schema {...}} optional portable structured output
           :on-chunk    (fn [{:keys [type text]}])  optional streaming callback;
@@ -42,6 +42,11 @@
                                              merged into the wire request;
                                              nil values remove keys the
                                              adapter would otherwise set
+
+  Core removes executable tool functions, tool policies and argument
+  validators before calling an adapter. Adapters describe tools on the
+  wire; they do not execute them. As part of the additive contract below,
+  they may ignore any other request key they do not understand.
 
   Messages, tools, tool calls and usage are plain-keyed protocol
   structures (see clj-llm.spec). Message roles are :system, :user,

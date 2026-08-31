@@ -1,38 +1,48 @@
-# clj-llm {.unnumbered}
+::: {.hero}
 
-One small Clojure API for Anthropic, OpenAI-compatible providers, and Ollama. Generate text, stream responses, call tools, request structured data, and compare models with evals.
+# clj-llm {.unnumbered .unlisted}
 
-## Installation
+Call LLMs from Clojure with ordinary functions and data.
 
-This alpha currently has no published or tagged immutable consumer coordinate.
-The current checkout and its `:local/root` examples are for repository
-evaluation only. Consumer installation guidance will become available after a
-release tag and a clean Clojars round trip.
+Generate text, stream responses, call tools, request structured data, create
+embeddings, and compare models with evals. The same small API works with
+Anthropic, OpenAI-compatible providers, and Ollama.
 
-## Get a response in a few minutes
+[Get a response](#quick-start){.btn .btn-primary .btn-lg}
+[View on GitHub](https://github.com/kirahowe/clj-llm){.btn .btn-outline-secondary .btn-lg}
 
-Install [Ollama](https://ollama.com/), then pull the model and verify both the
-model inventory and the local service:
+:::
+
+::: {.callout-note title="Alpha release"}
+clj-llm is ready to try, but the API may still change before `0.1.0`. If
+something feels awkward, [please open an issue](https://github.com/kirahowe/clj-llm/issues).
+This is exactly when that feedback is most useful.
+:::
+
+## Quick start
+
+The quickest way to try clj-llm is with [Ollama](https://ollama.com/). It runs
+locally and does not need an API key.
+
+### 1. Add the library
+
+Add the alpha to your `deps.edn`:
+
+```clojure
+{:deps {com.kirahowe/clj-llm {:mvn/version "0.1.0-alpha1"}}}
+```
+
+### 2. Pull a model
+
+Install Ollama, then download a small model:
 
 ```sh
 ollama pull llama3.2
-ollama list
-curl -fsS http://localhost:11434/api/version
 ```
 
-Because no consumer coordinate is available yet, evaluate the library directly
-from the current repository checkout. From any starting directory, replace the
-path below with the checkout's absolute path:
+### 3. Ask it something
 
-```sh
-cd /absolute/path/to/clj-llm
-clojure
-```
-
-This is a repository evaluation command, not consumer installation. Changing
-directories makes Clojure select the checkout's `deps.edn`, which puts the
-project on its classpath. At the REPL, use this minimal inline configuration for
-a first working call:
+Start a REPL with `clojure`, then paste this in:
 
 ```clojure
 (require '[clj-llm.core :as llm])
@@ -46,46 +56,44 @@ a first working call:
 ;; => "Sunlight is scattered by gases in the atmosphere..."
 ```
 
-The inline map performs no cwd-dependent config-file lookup. That independence
-applies to configuration, not code loading: Clojure still needs the checkout
-project on its classpath, as ensured by the launch command above.
+That is the whole working setup. The provider map tells clj-llm which protocol
+to use, and `"ollama/llama3.2"` selects the provider and model. There is no
+client to construct and no global state to initialize.
 
-Configuration has two layers. `:llm/providers` names available endpoints;
-here the provider name is `:ollama`, and `:llm/adapter :ollama` selects the
-native Ollama protocol and its default local URL. `:llm/defaults` supplies
-request defaults; the model string `ollama/llama3.2` routes to the `ollama`
-provider and asks it for the `llama3.2` model.
+The complete response is a Clojure map:
 
-> **Warning:**
-> Provider maps, base URLs, headers, credentials, and endpoint policies are
-> trusted application configuration. Never derive them from an HTTP request,
-> tenant record, upload, or other untrusted input. Built-in adapters reject
-> malformed and non-HTTP(S) destinations before network I/O and support an
-> optional host/port allowlist hook, but that hook does not pin DNS results or
-> enforce IP ranges; use network egress controls or a custom transport/provider
-> when those guarantees are required. Explicit local HTTP remains supported for
-> Ollama and compatible development servers.
+```clojure
+(select-keys (llm/generate config "What is the capital of France?")
+             [:llm/text :llm/model :llm/usage :llm/latency-ms])
 
-`generate` returns the full normalized response map, including the text,
-conversation messages, model, provider, token use, finish reason, latency,
-normalized request, and original provider response.
+;; => #:llm{:text "Paris"
+;;          :model "llama3.2"
+;;          :usage {:input-tokens 17 :output-tokens 2}
+;;          :latency-ms 184}
+```
 
-### Ollama diagnostics
+It also contains the complete conversation, finish reason, resolved request,
+provider name, start time, and original provider response. That makes every
+call useful now and measurable later.
 
-Failures are `ExceptionInfo` values with a typed `ex-data` map:
+If the first call fails, the [Getting started](getting_started.qmd#when-things-go-wrong)
+chapter has a short Ollama checklist and explains clj-llm's typed errors.
 
-| Type | Inspect | Operator action |
-|---|---|---|
-| `:llm/network-error` | `(ex-data e)` includes `:type` and `:url`; `(ex-cause e)` retains the underlying connection, DNS, or socket exception. | Run the version `curl` above. Start or restart Ollama, then correct the configured host, port, or network path if the URL is not reachable. |
-| `:llm/http-error` | `(ex-data e)` includes the provider's `:status`, decoded `:body`, and `:url`. | Read the actual status and body, run `ollama list`, pull the configured model if absent, and confirm that the provider/model names match. Exact missing-model responses can vary by Ollama version. |
+## What do you want to build?
 
-See [Getting started](getting_started.qmd) to select models, request structured
-data, and create embeddings.
+| I want to... | Start here |
+|---|---|
+| use Anthropic, OpenAI, or another compatible provider | [Configure a provider](getting_started.qmd#choose-a-provider) |
+| keep a multi-turn conversation | [Conversations are data](conversations_and_streaming.qmd#multi-turn-is-just-data) |
+| show text as it arrives | [Stream a response](conversations_and_streaming.qmd#streaming) |
+| get a value with a predictable shape | [Request structured data](getting_started.qmd#structured-responses) |
+| let a model call Clojure functions | [Use tools](tools.qmd) |
+| compare a model or prompt change | [Write an eval](evals.qmd) |
+| run a complete program | [Try the examples](notebooks/examples.md) |
 
-## Common tasks
+## One API, a few useful shapes
 
-Continue a conversation by passing the prior messages in the options map while
-keeping the new prompt as the second positional argument:
+Continue a conversation by passing the messages from the previous response:
 
 ```clojure
 (def first-answer
@@ -96,7 +104,8 @@ keeping the new prompt as the second positional argument:
               {:llm/messages (:llm/messages first-answer)})
 ```
 
-Stream text as it arrives:
+Stream text with a callback. The complete response is still returned when the
+stream finishes:
 
 ```clojure
 (defn print-chunk [{:keys [type text]}]
@@ -104,33 +113,25 @@ Stream text as it arrives:
     (print text)
     (flush)))
 
-(def streaming-response
-  (llm/generate config
-                "Tell me a short story."
-                {:llm/on-chunk print-chunk}))
-
-streaming-response
-;; => #:llm{:text "..." :messages [...] ...}
+(llm/generate config "Tell me a short story."
+              {:llm/on-chunk print-chunk})
 ```
-
-The callback receives typed event maps and deliberately prints only `:text`
-events. Streaming does not replace the normal result: `streaming-response` is
-the complete `generate` return, including `:llm/text` and `:llm/messages`.
 
 Ask for data that follows a JSON Schema:
 
 ```clojure
-(llm/generate
- config
- "Give me three names for a coffee shop."
- {:llm/response-format
-  {:type :json-schema
-   :name "coffee_shop_names"
-   :schema {:type "object"
-            :properties {:names {:type "array"
-                                 :items {:type "string"}}}
-            :required ["names"]}}})
-;; => #:llm{:structured {:names ["..." "..." "..."]} ...}
+(-> (llm/generate
+     config
+     "Give me three names for a coffee shop."
+     {:llm/response-format
+      {:type :json-schema
+       :name "coffee_shop_names"
+       :schema {:type "object"
+                :properties {:names {:type "array"
+                                     :items {:type "string"}}}
+                :required ["names"]}}})
+    :llm/structured)
+;; => {:names ["..." "..." "..."]}
 ```
 
 Run the same cases against different models or prompts:
@@ -148,20 +149,42 @@ Run the same cases against different models or prompts:
     eval/print-summary)
 ```
 
-## Start with a complete example
+## Why clj-llm looks like this
 
-The [Examples](notebooks/examples.md) chapter has three small programs you can run from this repository:
+LLM libraries have a tendency to grow into frameworks. clj-llm deliberately
+does not. Config, requests, conversations, tools, responses, and eval reports
+are all Clojure data, and the public operations are ordinary functions.
 
-- a one-shot command-line prompt;
-- a streaming terminal chat;
-- a Ring HTTP endpoint.
+This has a few practical consequences:
 
-## What clj-llm keeps simple
+- the same call works in a REPL, command-line program, Ring handler, or
+  background job;
+- model aliases keep provider and model names in config instead of spreading
+  them through application code;
+- conversations live wherever your application already keeps state;
+- provider differences stop at a small adapter boundary; and
+- every call records the request, response, token use, and timing needed for
+  evals, so measuring a change is part of the normal workflow rather than a
+  project for later.
 
-- There are no client or chat objects. Config, requests, conversations, and responses are Clojure data.
-- The same functions work in a REPL, command-line program, web handler, or background job.
-- Model aliases keep provider and model names in config instead of application code.
-- Every call records the request, response, token use, and timing needed for later evaluation.
-- Eval suites, scorers, reports, and CI thresholds are part of the library.
+The library was inspired by [RubyLLM](https://rubyllm.com/), then rebuilt around
+Clojure's strengths: small functions, immutable values, and explicit state.
 
-clj-llm is currently an alpha. The public API may still change before `0.1.0`.
+## Run a complete example
+
+The repository includes three standalone projects using local Ollama:
+
+- `ask` sends one command-line prompt;
+- `chat` runs a streaming, multi-turn terminal conversation; and
+- `prompt-server` puts `generate` behind a small local Ring endpoint.
+
+Clone the repository and run one from its root:
+
+```sh
+git clone https://github.com/kirahowe/clj-llm.git
+cd clj-llm
+./examples/run ask "Why is the sky blue?"
+```
+
+See the [Examples](notebooks/examples.md) chapter for the complete programs and
+the commands for chat and the HTTP server.

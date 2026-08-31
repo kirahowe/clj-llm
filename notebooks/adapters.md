@@ -54,11 +54,16 @@ Implement the `-`-prefixed multimethods in `clj-llm.provider`. Callers use the u
       :system      "..."              ; optional
       :max-tokens  4096               ; optional
       :temperature 0.7                ; optional
-      :tools       [{:name ... :description ... :parameters ... :fn ...}]
+      :tools       [{:name ... :description ... :parameters ...}]
       :response-format {:type :json-schema :name "name" :schema {...}} ; optional
       :on-chunk    (fn [{:keys [type text]}] ...)  ; optional; emit {:type :text :text delta}
       :options     {...}}             ; provider-specific passthrough; merge into your wire body last
 ```
+
+Core removes executable tool functions, policies, and argument validators before
+the request crosses the adapter boundary. An adapter describes tools to the
+provider; it never executes them. It may ignore any other request key it does
+not understand.
 
 And returns:
 

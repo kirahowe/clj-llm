@@ -25,8 +25,8 @@ Output lands in `docs/` (ready for GitHub Pages).
 
 | File                             | Content                                        |
 |----------------------------------|------------------------------------------------|
-| `index.md`                       | what clj-llm is, installation                    |
-| `getting_started.clj`            | config, generate, the response map             |
+| `index.md`                       | release quick start and orientation              |
+| `getting_started.clj`            | providers, config, requests, and response data   |
 | `examples.md`                    | runnable CLI, chat, and HTTP server guides     |
 | `conversations_and_streaming.clj`| multi-turn, streaming                          |
 | `tools.clj`                      | function calling, manual tool handling         |

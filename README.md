@@ -1,43 +1,31 @@
 # clj-llm
 
-A small, functional Clojure library for Anthropic, OpenAI-compatible providers, and Ollama. Generate text, stream responses, call tools, request structured data, create embeddings, and compare models with evals.
+Call LLMs from Clojure with ordinary functions and data. Generate text, stream responses, call tools, request structured data, create embeddings, and compare models with evals through one small API for Anthropic, OpenAI-compatible providers, and Ollama.
 
 Inspired by [RubyLLM](https://rubyllm.com/), built around Clojure data and functions.
 
 > [!NOTE]
-> clj-llm is currently an alpha. The public API may still change before `0.1.0`.
+> clj-llm is ready to try, but the public API may still change before `0.1.0`.
+> If something feels awkward, this is exactly when that feedback is useful.
 
 ## Installation
 
-This alpha currently has no published or tagged immutable consumer coordinate.
-The current checkout and the `:local/root` dependencies in the [examples](examples/)
-are for repository evaluation only. Consumer installation guidance will become
-available after a release tag and a clean Clojars round trip.
+Add the alpha to your `deps.edn`:
+
+```clojure
+{:deps {com.kirahowe/clj-llm {:mvn/version "0.1.0-alpha1"}}}
+```
 
 ## Get a response in a few minutes
 
-Install [Ollama](https://ollama.com/), then pull the model and verify both the
-model inventory and the local service:
+The quickest way to try clj-llm is with [Ollama](https://ollama.com/). It runs
+locally and does not need an API key. Install it, then pull a small model:
 
 ```sh
 ollama pull llama3.2
-ollama list
-curl -fsS http://localhost:11434/api/version
 ```
 
-Because no consumer coordinate is available yet, evaluate the library directly
-from the current repository checkout. From any starting directory, replace the
-path below with the checkout's absolute path:
-
-```sh
-cd /absolute/path/to/clj-llm
-clojure
-```
-
-This is a repository evaluation command, not consumer installation. Changing
-directories makes Clojure select the checkout's `deps.edn`, which puts the
-project on its classpath. At the REPL, use this minimal inline configuration for
-a first working call:
+Start a REPL with `clojure`, then paste this in:
 
 ```clojure
 (require '[clj-llm.core :as llm])
@@ -51,38 +39,14 @@ a first working call:
 ;; => "Sunlight is scattered by gases in the atmosphere..."
 ```
 
-The inline map performs no cwd-dependent config-file lookup. That independence
-applies to configuration, not code loading: Clojure still needs the checkout
-project on its classpath, as ensured by the launch command above.
+That is the whole working setup. `generate` returns a complete Clojure map with
+the text, conversation, resolved request, provider, model, token use, finish
+reason, timing, and original provider response. There is no client to construct
+and no global state to initialize.
 
-Configuration has two layers. `:llm/providers` names available endpoints;
-here the provider name is `:ollama`, and `:llm/adapter :ollama` selects the
-native Ollama protocol and its default local URL. `:llm/defaults` supplies
-request defaults; the model string `ollama/llama3.2` routes to the `ollama`
-provider and asks it for the `llama3.2` model.
-
-> [!WARNING]
-> Provider maps, base URLs, headers, credentials, and endpoint policies are
-> trusted application configuration. Never derive them from an HTTP request,
-> tenant record, upload, or other untrusted input. Built-in adapters reject
-> malformed and non-HTTP(S) destinations before network I/O and support an
-> optional host/port allowlist hook, but that hook does not pin DNS results or
-> enforce IP ranges; use network egress controls or a custom transport/provider
-> when those guarantees are required. Explicit local HTTP remains supported for
-> Ollama and compatible development servers.
-
-`generate` returns the full normalized response map, including the text,
-conversation messages, model, provider, token use, finish reason, latency,
-normalized request, and original provider response.
-
-### Ollama diagnostics
-
-Failures are `ExceptionInfo` values with a typed `ex-data` map:
-
-| Type | Inspect | Operator action |
-|---|---|---|
-| `:llm/network-error` | `(ex-data e)` includes `:type` and `:url`; `(ex-cause e)` retains the underlying connection, DNS, or socket exception. | Run the version `curl` above. Start or restart Ollama, then correct the configured host, port, or network path if the URL is not reachable. |
-| `:llm/http-error` | `(ex-data e)` includes the provider's `:status`, decoded `:body`, and `:url`. | Read the actual status and body, run `ollama list`, pull the configured model if absent, and confirm that the provider/model names match. Exact missing-model responses can vary by Ollama version. |
+The [getting-started guide](https://kirahowe.github.io/clj-llm/getting_started.html)
+covers hosted providers, file-backed config, model aliases, typed errors, and an
+Ollama troubleshooting checklist.
 
 ## Common tasks
 

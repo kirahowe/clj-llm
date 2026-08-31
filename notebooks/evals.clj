@@ -1,8 +1,8 @@
 ;; # Evals
 
-;; Evals let you compare models, prompts, settings, or complete application functions with repeatable cases and scores.
+;; It is very easy to change a model or prompt and convince yourself the result looks better. Evals replace that vibe with repeatable cases and scores.
 
-;; There are two parts: responses record the details of each call, and eval suites run cases against variants. You can turn useful production interactions into cases, compare a proposed change, and set score thresholds for CI.
+;; There are two parts. Every response records the details of its call, and eval suites run cases against variants. You can turn useful production interactions into cases, compare a proposed change, and set score thresholds for CI.
 
 ^{:kindly/hide-code true}
 (ns evals
@@ -14,7 +14,7 @@
 ^{:kindly/hide-code true}
 (def config demo/config)
 
-;; ## Layer 1: every call is already a measurement
+;; ## Every call is already a measurement
 
 ;; Each response contains the normalized request, token use, latency, start time, and operation. Tool functions are removed from the stored request; add them again before replaying a tool-using call.
 
@@ -37,7 +37,7 @@
 
 ;; The hook runs on the calling thread, so keep it quick. If it throws, the model response is still returned.
 
-;; ## Layer 2: suites score cases against variants
+;; ## Suites score cases against variants
 
 ;; A suite has **cases** to run, **variants** to compare, and **scorers** to grade the answers. Pass it as an in-memory map or as a path to an EDN file. Path/file/reader sources are data-only by default: built-in keyword scorers and inert suite data run without enabling code.
 

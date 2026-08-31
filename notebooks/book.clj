@@ -21,7 +21,15 @@
   (fs/create-dirs "docs")
   (fs/copy "notebooks/index.md" (fs/file "docs" "index.qmd"))
   (clay/make! {:format [:quarto :html]
-               :book {:title "clj-llm: LLM calls you can measure"}
+               :quarto {:format {:html {:toc true
+                                         :toc-depth 3
+                                         :theme :cosmo
+                                         :css "notebooks/book.css"}}}
+               :book {:title "clj-llm: LLM calls you can measure"
+                      :repo-url "https://github.com/kirahowe/clj-llm"
+                      :repo-actions ["issue"]
+                      :page-footer {:left "clj-llm is open source under the MIT License."
+                                    :right "Built with Clojure, Clay, and Quarto."}}
                :base-source-path "notebooks"
                :source-path chapters
                :base-target-path "docs"

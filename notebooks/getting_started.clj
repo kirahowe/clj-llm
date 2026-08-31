@@ -1,6 +1,6 @@
 ;; # Getting started
 
-;; Start here for provider configuration, requests, model selection, structured responses, embeddings, and errors.
+;; This chapter starts with provider configuration, then works outward from one call to model aliases, structured responses, embeddings, and errors.
 
 ^{:kindly/hide-code true}
 (ns getting-started
@@ -11,35 +11,68 @@
 ^{:kindly/hide-code true}
 (def config demo/config)
 
-;; ## The smallest useful configuration
+;; ## Installation
+;;
+;; Add the alpha to your `deps.edn`:
+;;
+;; ```clojure
+;; {:deps {com.kirahowe/clj-llm {:mvn/version "0.1.0-alpha1"}}}
+;; ```
+;;
+;; Then require the public API wherever you need it:
+;;
+;; ```clojure
+;; (require '[clj-llm.core :as llm])
+;; ```
 
-;; Start with one local Ollama provider and one explicit default model. The
-;; `:ollama` entry registers a provider, and `:llm/adapter :ollama` selects
-;; Ollama's native API. The `"ollama/llama3.2"` default explicitly pairs that
-;; provider with the model id, so ordinary calls do not need to select either.
+;; ## Choose a provider
 
-;; Before the first call, pull the model, confirm that the Ollama server lists
-;; it, and verify the HTTP endpoint:
+;; A **provider** is an account or endpoint. An **adapter** is the protocol used to talk to it. This distinction is useful because OpenAI-compatible services can all share the `:openai` adapter, while an application can still give each endpoint a meaningful provider name.
+
+;; You only need to configure the providers you actually use.
+
+;; ### Ollama
+
+;; Ollama is the easiest way to make a local call without an API key. Install [Ollama](https://ollama.com/), then pull a model:
 ;;
 ;; ```shell
 ;; ollama pull llama3.2
-;; ollama list
-;; curl -fsS http://localhost:11434/api/version
 ;; ```
 ;;
-;; `ollama list` proves that the Ollama instance reached by the CLI advertises
-;; the model as installed. The version endpoint proves that the HTTP API at the
-;; default URL is reachable and reports its server version. At call time an
-;; unreachable server throws `ex-info` with `:type :llm/network-error`; an
-;; Ollama response with a failing status throws `:type :llm/http-error` plus
-;; `:status` and `:body`. A model-related failure can reflect the model name,
-;; the server being contacted, or other provider details, so inspect the actual
-;; status and body rather than assuming one cause.
+;; Its smallest useful configuration is the one from the quick start:
+;;
+;; ```clojure
+;; #:llm{:providers {:ollama {:llm/adapter :ollama}}
+;;       :defaults #:llm{:model "ollama/llama3.2"}}
+;; ```
+;;
+;; The `:ollama` entry names the provider. `:llm/adapter :ollama` selects Ollama's native API and its default local URL. The model string pairs that provider name with Ollama's model id.
+
+;; ### Anthropic
+
+;; The Anthropic adapter uses the Messages API. Keep the API key in the environment and read it from an Aero config file rather than committing it:
+;;
+;; ```clojure
+;; #:llm{:providers {:anthropic {:llm/adapter :anthropic
+;;                                :api-key #env ANTHROPIC_API_KEY}}
+;;       :defaults #:llm{:model "anthropic/claude-sonnet-4-6"}}
+;; ```
+
+;; ### OpenAI and compatible services
+
+;; The `:openai` adapter speaks the Chat Completions protocol. It works with OpenAI itself and with compatible services such as OpenRouter, Groq, Together, vLLM, and LM Studio. For OpenAI:
+;;
+;; ```clojure
+;; #:llm{:providers {:openai {:llm/adapter :openai
+;;                            :api-key #env OPENAI_API_KEY}}
+;;       :defaults #:llm{:model "openai/gpt-4.1-mini"}}
+;; ```
+;;
+;; [`gpt-4.1-mini`](https://developers.openai.com/api/docs/models/gpt-4.1-mini) supports Chat Completions, streaming, function calling, and structured outputs. For another compatible service, add its `:base-url` and use the model id that service expects.
 
 ;; ## The first call
 
-;; Pass the config and a prompt string to `generate`. Its return value is the
-;; complete response map:
+;; Pass a config and prompt string to `generate`. The examples in this book run against a small deterministic provider so the book can build without a network connection, but the call is exactly the same with any configuration above:
 
 ;; ```clojure
 ;; (def config
@@ -52,13 +85,13 @@
 ^{:kindly/hide-code true}
 (llm/generate config "What is the capital of France?")
 
-;; The most useful response keys are:
+;; This works! `generate` returns the complete response rather than just the text. The keys you will use most often are:
 
 ;; - `:llm/text`: the reply as a string.
 ;; - `:llm/messages`: the conversation including the reply. Pass these messages into another call to continue it.
 ;; - `:llm/usage`: `{:input-tokens n :output-tokens n}`; with tool use, summed over all rounds.
 ;; - `:llm/finish-reason`: commonly `:stop`, `:length`, `:tool-calls`, or `:refusal`. Providers may return other values.
-;; - `:llm/request`, `:llm/latency-ms`, `:llm/started-at`, `:llm/op`: a record of what was called and how long it took. Tool functions are omitted from the stored request; add them again before replaying a tool-using request.
+;; - `:llm/request`, `:llm/latency-ms`, `:llm/started-at`, `:llm/op`: what was called and how long it took. Tool functions are omitted from the stored request; add them again before replaying a tool-using request.
 ;; - `:llm/raw`: the provider's parsed wire response, when you need something the normalized keys don't carry.
 
 ;; ## Per-call options
@@ -219,6 +252,15 @@
 ;; With a single string you get `:llm/embedding` (one vector) for convenience alongside `:llm/embeddings`.
 
 ;; ## When things go wrong
+
+;; If a local Ollama call fails, check the two things clj-llm needs: the model is installed, and the HTTP service is reachable:
+;;
+;; ```shell
+;; ollama list
+;; curl -fsS http://localhost:11434/api/version
+;; ```
+;;
+;; An unreachable service throws `ex-info` with `:type :llm/network-error`. A provider response with an unsuccessful status throws `:llm/http-error` and includes its `:status` and decoded `:body`. Read that body before guessing: a model error can mean the name is wrong, the model is missing from this Ollama instance, or the request reached a different server than expected.
 
 ;; Invalid config, requests, and eval suites throw `ex-info` with a readable `:explain` value. Their [malli](https://github.com/metosin/malli) schemas are in `clj-llm.spec`:
 

@@ -12,6 +12,5 @@ They are intentionally small. Read them in order to see the same
 `llm/generate` call move from a one-off expression, to a loop, to an HTTP
 handler. Each `deps.edn` uses `:local/root "../.."` only because the example
 runs inside this repository checkout; that relative path resolves the checkout
-on disk and is not a published dependency. Do not copy it into an unrelated
-project. The root [installation instructions](../README.md#installation) explain
-why this alpha has no published or tagged consumer coordinate yet.
+on disk. Do not copy it into an unrelated project. Use the
+[`0.1.0-alpha1` coordinate](../README.md#installation) in an application instead.

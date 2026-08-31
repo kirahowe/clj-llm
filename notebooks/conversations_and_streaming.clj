@@ -12,8 +12,7 @@
 
 ;; ## Multi-turn is just data
 
-;; There is no chat object. A conversation is the `:llm/messages` vector in a
-;; complete `generate` response:
+;; There is no chat object hiding mutable history. A conversation is the `:llm/messages` vector in a `generate` response:
 
 (def first-response
   "The complete response for the first turn."
@@ -35,20 +34,14 @@ continued-response
 
 (mapv :role (:llm/messages continued-response))
 
-;; Store that vector where your application keeps state: a Ring session, an
-;; atom, or a database row. Its schema is `clj-llm.spec/Message`. The complete
-;; response remains the canonical result; read `:llm/text` when a destination
-;; needs only display text.
+;; Store that vector wherever your application already keeps state: a Ring session, an atom, or a database row. Its schema is `clj-llm.spec/Message`. Read `:llm/text` when you only need to display the answer; keep the full response when you need the conversation or call record.
 
 ;; A single prompt and a multi-turn conversation both use `generate`; only the
 ;; `:llm/messages` option changes.
 
 ;; ## Streaming
 
-;; Pass a named callback as `:llm/on-chunk` to receive output as it is produced.
-;; Each chunk has a `:type`; text deltas are
-;; `{:type :text :text "delta"}`. This callback is named for its destination
-;; and deliberately ignores chunk types it does not handle:
+;; Pass a callback as `:llm/on-chunk` to receive output as it is produced. Each chunk has a `:type`; text deltas are `{:type :text :text "delta"}`. Name the callback for what it does and ignore chunk types it does not handle:
 
 (def collected-text
   "Text deltas collected from one streamed response."
@@ -71,17 +64,13 @@ continued-response
                 {:llm/messages (:llm/messages continued-response)
                  :llm/on-chunk collect-chunk!}))
 
-;; Streaming changes delivery, not the result. The callback's text concatenates
-;; to the final `:llm/text`, while `streamed-response` retains all ordinary
-;; response keys such as `:llm/messages`, `:llm/usage`, and `:llm/raw`:
+;; Streaming changes delivery, not the result. The callback's text concatenates to the final `:llm/text`, and `streamed-response` still contains ordinary response keys such as `:llm/messages`, `:llm/usage`, and `:llm/raw`:
 
 (= (str/join @collected-text) (:llm/text streamed-response))
 
 streamed-response
 
-;; In a terminal, define the typed `print-chunk` callback in the same copyable
-;; context. It prints and flushes only text chunks, safely ignoring unknown
-;; types. `generate` still returns the canonical complete response:
+;; In a terminal, the callback can simply print and flush text chunks. `generate` still returns the complete response:
 
 (kind/code
  "(defn print-chunk
