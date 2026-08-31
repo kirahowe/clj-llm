@@ -1,0 +1,5 @@
+#:llm{:cases [#:llm{:id :capital
+                    :input "What is the capital of France?"
+                    :expected "Paris"}]
+      :variants [#:llm{:id :default :model "ollama/llama3.2"}]
+      :scorers [:includes]}
