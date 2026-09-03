@@ -1,14 +1,15 @@
 ;; Verifies the README "Ollama diagnostics" table: the documented exception
 ;; types and ex-data shapes for an unreachable server, a missing model, and
-;; (beyond the table) an unknown provider prefix.
+;; (beyond the table) an unknown provider prefix plus the rejection of
+;; :llm-qualified near-miss keys in provider maps.
 ;;
 ;; Run: clojure -M .claude/skills/verify/scripts/diagnostics.clj
 ;; Exit 0 = all diagnostics match the documented shapes.
 ;;
 ;; NOTE: adapter-level provider keys are unqualified (:base-url, :api-key).
-;; A qualified near-miss such as :llm/base-url is silently ignored and the
-;; adapter falls back to its default URL — do not "fix" the key below to a
-;; qualified one.
+;; A qualified near-miss such as :llm/base-url throws :llm/config-error at
+;; resolution time (checked below) — do not "fix" the unqualified keys in
+;; this script to qualified ones.
 
 (require '[clj-llm.core :as llm])
 
@@ -39,6 +40,16 @@
               (number? (:status (ex-data e)))
               (contains? (ex-data e) :body)
               (contains? (ex-data e) :url))))
+
+;; --- :llm/config-error: near-miss qualified key in a provider map ---
+(let [config #:llm{:providers {:ollama {:llm/adapter :ollama
+                                        :llm/base-url "http://localhost:1"}}
+                   :defaults #:llm{:model "ollama/llama3.2"}}
+      e (try (llm/generate config "hi") nil (catch Exception e e))]
+  (check "config-error-near-miss-key"
+         (and (some? e)
+              (= :llm/config-error (:type (ex-data e)))
+              (= [:llm/base-url] (:unknown-keys (ex-data e))))))
 
 ;; --- :llm/config-error: unknown provider prefix ---
 (let [config #:llm{:providers {:ollama {:llm/adapter :ollama}}

@@ -69,6 +69,15 @@ boundaries.
   variant, and this helper makes it one merge.
 
 ### Changed
+- **Provider maps reject unknown `:llm`-qualified keys at resolution
+  time.** Adapter options are unqualified, so a near-miss like
+  `:llm/base-url` used to be silently ignored — the adapter fell back
+  to its default endpoint, in the worst case sending prompts and
+  credentials somewhere the config never pointed. The `:llm` namespace
+  is reserved to the library, so such keys are always mistakes; they
+  now throw `:llm/config-error` naming the keys and suggesting the
+  unqualified spelling. Unqualified and foreign-namespace keys still
+  flow through to adapters untouched.
 - **Cases need `:llm/input`/`:llm/messages` only under the default
   task.** A suite with a custom `:llm/task` may write cases as pure
   domain data — your own keys plus optional `:llm/expected` and
@@ -116,6 +125,18 @@ boundaries.
   released applications and security scanners off the affected version.
 - **The prompt-server example is local-only and body-limited.** It binds
   to `127.0.0.1` and rejects prompt bodies larger than 64 KiB.
+
+### Fixed
+- **Non-streaming request timeouts always surface as
+  `HttpTimeoutException`.** The JDK's request-level timeout races the
+  library's own deadline timer; when the JDK side aborted the exchange
+  first, the failure leaked as a plain `IOException` ("closed")
+  instead of the documented timeout cause. Any `IOException` arriving
+  after the request deadline now converts to the timeout exception with
+  the original preserved as its cause, so retry logic can rely on the
+  cause type. Streaming requests are unaffected: their `:timeout-ms`
+  only reaches through response headers, and stream deadlines already
+  throw typed `:llm/response-limit` errors.
 
 ### Migration notes
 - Commit `b3b8e4b` renamed the entire keyspace from `:lib/*` to

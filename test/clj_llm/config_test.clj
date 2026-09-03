@@ -74,3 +74,35 @@
                                                 #:llm{:provider :nope :model "x"})))
     (is (thrown-with-msg? Exception #"No model given"
                           (config/resolve-model {} nil)))))
+
+(deftest provider-maps-reject-unknown-library-keys
+  (testing "a near-miss qualified key is rejected with a spelling hint"
+    (let [config #:llm{:providers {:local {:llm/adapter :ollama
+                                           :llm/base-url "http://localhost:1"}}}]
+      (is (thrown-with-msg? Exception #"did you mean :base-url\?"
+                            (config/provider-config config :local)))
+      (is (= {:type :llm/config-error
+              :provider :local
+              :unknown-keys [:llm/base-url]}
+             (try (config/provider-config config :local)
+                  nil
+                  (catch Exception e (ex-data e)))))))
+
+  (testing "the rejection reaches model resolution"
+    (is (thrown-with-msg?
+         Exception #"Unknown :llm-qualified key"
+         (config/resolve-model
+          #:llm{:providers {:local {:llm/adapter :ollama
+                                    :llm/api-key "k"}}}
+          "local/llama3.2"))))
+
+  (testing "library keys, adapter keys, and foreign-namespace keys pass"
+    (let [p (config/provider-config
+             #:llm{:providers
+                   {:ok {:llm/adapter :openai
+                         :llm/capabilities {:json-schema-response true}
+                         :base-url "https://llm.acme.test/v1"
+                         :api-key "k"
+                         :acme/tier :prod}}}
+             :ok)]
+      (is (= :ok (config/provider-name p))))))

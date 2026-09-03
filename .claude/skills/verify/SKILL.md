@@ -31,7 +31,7 @@ Pull anything missing: `ollama pull llama3.2`, `ollama pull nomic-embed-text`.
 bb ci        # fmt + lint + test:integrant; expect 0 failures
 ```
 
-If exactly `non-streaming-timeout-covers-body-consumption` fails, rerun on a
+If a timing-sensitive http test fails under heavy machine load, rerun on a
 quiet machine before treating it as a regression (see Gotchas).
 
 ## 2. README quickstart and common tasks
@@ -141,14 +141,16 @@ in the report.
   REPL: prompts and printed output share lines, so `grep`/`tail` filters
   silently eat markers. The scripts here avoid this by running via
   `clojure -M script.clj` with explicit exit codes.
-- **`non-streaming-timeout-covers-body-consumption` is load-sensitive**: a
-  30 ms timeout raced against a 150 ms slow body flakes when Ollama inference
-  or parallel JVMs saturate the machine (cause surfaces as `IOException`
-  instead of `HttpTimeoutException`). Isolated reruns pass.
+- **Run the suite on a quiet machine anyway.** The old load-sensitive flake
+  in `non-streaming-timeout-covers-body-consumption` (JDK request timeout
+  racing the library's deadline timer, leaking an `IOException` cause) was
+  fixed by converting post-deadline IOExceptions to the timeout exception,
+  with a deterministic regression test — but timing tests deserve calm
+  conditions regardless.
 - **Provider-map adapter keys are unqualified** (`:base-url`, `:api-key`).
-  Writing `:llm/base-url` is *silently ignored* and the adapter uses its
-  default URL — a false-positive trap for any test that expects a request to
-  fail against a bad URL.
+  A qualified near-miss like `:llm/base-url` throws `:llm/config-error` at
+  resolution time with a spelling hint (it used to be silently ignored);
+  the diagnostics script checks this rejection.
 - **zsh eats unquoted `=`-prefixed words** (`echo ===` fails); quote
   separators in shell one-liners.
 - **This repo is jj (colocated)** — check `jj st` before committing;

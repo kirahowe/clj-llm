@@ -51,12 +51,42 @@
   [provider-config]
   (:llm/name provider-config))
 
+(def ^:private provider-library-keys
+  #{:llm/adapter :llm/capabilities :llm/name})
+
+(defn- reject-unknown-library-keys!
+  "Adapter options in a provider map are unqualified, so a near-miss like
+  :llm/base-url would otherwise be silently ignored and the adapter would
+  fall back to its default endpoint — worst case sending prompts and
+  credentials somewhere the config never pointed. The :llm namespace is
+  reserved to the library, so unknown :llm-qualified keys are always a
+  mistake and safe to reject."
+  [pname p]
+  (when-let [unknown (seq (filter #(and (keyword? %)
+                                        (= "llm" (namespace %))
+                                        (not (provider-library-keys %)))
+                                  (keys p)))]
+    (throw (ex-info (str "Unknown :llm-qualified key"
+                         (when (next unknown) "s") " in provider " pname ": "
+                         (str/join ", "
+                                   (map #(str % " (did you mean :" (name %) "?)")
+                                        unknown))
+                         ". Adapter options are unqualified; the only "
+                         "library keys in a provider map are :llm/adapter "
+                         "and :llm/capabilities.")
+                    {:type :llm/config-error
+                     :provider pname
+                     :unknown-keys (vec unknown)}))))
+
 (defn provider-config
   "Look up a provider by name, tagging it with :llm/name for error
-  reporting. Throws when the provider is not configured."
+  reporting. Throws when the provider is not configured, and rejects
+  provider maps containing :llm-qualified keys the library does not
+  define (adapter options such as :base-url are unqualified)."
   [config provider-name]
   (if-let [p (get-in config [:llm/providers provider-name])]
-    (assoc p :llm/name provider-name)
+    (do (reject-unknown-library-keys! provider-name p)
+        (assoc p :llm/name provider-name))
     (throw (ex-info (str "No provider named " provider-name " in config. "
                          "Known providers: "
                          (pr-str (keys (:llm/providers config))))
