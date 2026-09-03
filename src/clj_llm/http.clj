@@ -227,6 +227,20 @@
   (HttpTimeoutException.
    (str "Request timed out after " timeout-ms "ms calling " url)))
 
+(defn- deadline-failure
+  "The JDK's request-level timeout races this namespace's deadline timer;
+  when it wins it tears the exchange down and the blocked read surfaces a
+  plain IOException (e.g. \"closed\") instead of a timeout. Once the
+  request deadline has expired, any IOException IS the timeout, so report
+  it as one and keep the original as its cause."
+  [url started-ns timeout-ms e]
+  (if (or (instance? HttpTimeoutException e)
+          (< (- (System/nanoTime) started-ns)
+             (.toNanos TimeUnit/MILLISECONDS (long timeout-ms))))
+    e
+    (doto ^Exception (request-timeout-exception url timeout-ms)
+      (.initCause e))))
+
 (defn- request-timed-read
   [^InputStream input ^bytes buffer requested url started-ns timeout-ms]
   (let [remaining (- (.toNanos TimeUnit/MILLISECONDS (long timeout-ms))
@@ -429,7 +443,7 @@
           {:status status :body body}
           (error! url status body)))
       (catch IOException e
-        (network-error! url e)))))
+        (network-error! url (deadline-failure url started-ns timeout-ms e))))))
 
 (defn post-json-lines
   "POST `body` as JSON to `url` and reduce (f acc line) over non-blank

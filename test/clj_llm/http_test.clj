@@ -11,7 +11,9 @@
            (java.io IOException)
            (java.net ConnectException InetSocketAddress)
            (java.net.http HttpTimeoutException)
-           (java.nio.charset StandardCharsets)))
+           (java.nio.charset StandardCharsets)
+           (java.util.concurrent CountDownLatch ScheduledThreadPoolExecutor
+                                 TimeUnit)))
 
 (def ^:dynamic *base-url* nil)
 (def stream-closed (atom nil))
@@ -281,6 +283,43 @@
            (request "/slow-body" {:timeout-ms 30})))]
     (is (= :llm/network-error (:type (ex-data exception))))
     (is (instance? HttpTimeoutException (ex-cause exception)))))
+
+(deftest non-streaming-timeout-survives-delayed-deadline-timer
+  ;; Occupy the single deadline-executor thread so the JDK request timeout,
+  ;; not the library's close-timer, aborts the exchange — the ordering that
+  ;; machine load produces, which used to leak a plain IOException cause.
+  (let [executor ^ScheduledThreadPoolExecutor
+        @(ns-resolve 'clj-llm.http 'deadline-executor)
+        gate (CountDownLatch. 1)]
+    (.schedule executor ^Runnable (fn [] (.await gate)) 0 TimeUnit/MILLISECONDS)
+    (try
+      (let [exception
+            (response-limit
+             #(http/post-json
+               (request "/slow-body" {:timeout-ms 30})))]
+        (is (= :llm/network-error (:type (ex-data exception))))
+        (is (instance? HttpTimeoutException (ex-cause exception))))
+      (finally
+        (.countDown gate)))))
+
+(deftest deadline-failure-reports-timeouts-past-the-deadline
+  (let [deadline-failure @(ns-resolve 'clj-llm.http 'deadline-failure)
+        url "http://localhost/v1"
+        expired (- (System/nanoTime) (.toNanos TimeUnit/MILLISECONDS 100))
+        live (System/nanoTime)]
+    (testing "an IOException before the deadline passes through"
+      (let [e (IOException. "reset")]
+        (is (identical? e (deadline-failure url live 30000 e)))))
+    (testing "an HttpTimeoutException passes through unchanged"
+      (let [e (HttpTimeoutException. "already a timeout")]
+        (is (identical? e (deadline-failure url expired 30 e)))))
+    (testing "an IOException past the deadline becomes the timeout"
+      (let [e (IOException. "closed")
+            converted (deadline-failure url expired 30 e)]
+        (is (instance? HttpTimeoutException converted))
+        (is (identical? e (ex-cause converted)))
+        (is (= "Request timed out after 30ms calling http://localhost/v1"
+               (ex-message converted)))))))
 
 (deftest built-in-adapters-forward-every-http-option
   (let [policy (constantly true)
