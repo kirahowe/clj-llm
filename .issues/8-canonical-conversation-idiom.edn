@@ -1,0 +1,12 @@
+{:id 8
+ :title "Standardize the canonical conversation idiom"
+ :status :done
+ :type :chore
+ :priority :p0
+ :created "2026-08-27"
+ :updated "2026-08-27"
+ :tags #{"docs" "onboarding"}
+ :blocked-by #{}
+ :related #{}
+ :details "8-canonical-conversation-idiom.md"
+ :legacy-id "ONB-008"}

@@ -1,0 +1,12 @@
+{:id 1
+ :title "Add enforceable controls to automatic tool execution"
+ :status :done
+ :type :bug
+ :priority :p1
+ :created "2026-08-26"
+ :updated "2026-08-26"
+ :tags #{"security" "tools"}
+ :blocked-by #{}
+ :related #{}
+ :details "1-tool-execution-controls.md"
+ :legacy-id "SEC-001"}

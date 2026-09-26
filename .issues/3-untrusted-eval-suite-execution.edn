@@ -1,0 +1,12 @@
+{:id 3
+ :title "Make executable eval-suite trust explicit in the API"
+ :status :done
+ :type :bug
+ :priority :p2
+ :created "2026-08-26"
+ :updated "2026-08-26"
+ :tags #{"evals" "security"}
+ :blocked-by #{}
+ :related #{}
+ :details "3-untrusted-eval-suite-execution.md"
+ :legacy-id "SEC-003"}

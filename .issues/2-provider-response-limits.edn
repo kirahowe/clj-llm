@@ -1,0 +1,12 @@
+{:id 2
+ :title "Bound provider response bodies and streams"
+ :status :done
+ :type :bug
+ :priority :p2
+ :created "2026-08-26"
+ :updated "2026-08-26"
+ :tags #{"http" "security"}
+ :blocked-by #{}
+ :related #{}
+ :details "2-provider-response-limits.md"
+ :legacy-id "SEC-002"}

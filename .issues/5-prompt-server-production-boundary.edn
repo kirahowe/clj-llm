@@ -1,0 +1,12 @@
+{:id 5
+ :title "Keep the prompt-server example out of production"
+ :status :done
+ :type :chore
+ :priority :p3
+ :created "2026-08-26"
+ :updated "2026-08-27"
+ :tags #{"examples" "security"}
+ :blocked-by #{}
+ :related #{}
+ :details "5-prompt-server-production-boundary.md"
+ :legacy-id "SEC-005"}

@@ -1,0 +1,12 @@
+{:id 4
+ :title "Define a policy for custom provider endpoints"
+ :status :done
+ :type :feature
+ :priority :p2
+ :created "2026-08-26"
+ :updated "2026-08-26"
+ :tags #{"providers" "security"}
+ :blocked-by #{}
+ :related #{}
+ :details "4-provider-endpoint-policy.md"
+ :legacy-id "SEC-004"}

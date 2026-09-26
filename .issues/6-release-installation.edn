@@ -1,0 +1,12 @@
+{:id 6
+ :title "Publish and verify the advertised installation coordinate"
+ :status :blocked
+ :type :chore
+ :priority :p0
+ :created "2026-08-27"
+ :updated "2026-08-27"
+ :tags #{"onboarding" "release"}
+ :blocked-by #{}
+ :related #{}
+ :details "6-release-installation.md"
+ :legacy-id "ONB-006"}

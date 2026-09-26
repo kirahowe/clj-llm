@@ -1,0 +1,12 @@
+{:id 11
+ :title "Reduce streaming ceremony without changing its contract"
+ :status :done
+ :type :chore
+ :priority :p1
+ :created "2026-08-27"
+ :updated "2026-08-27"
+ :tags #{"examples" "onboarding"}
+ :blocked-by #{}
+ :related #{}
+ :details "11-streaming-example-ceremony.md"
+ :legacy-id "ONB-011"}
